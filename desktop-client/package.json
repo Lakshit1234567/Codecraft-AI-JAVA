@@ -1,0 +1,13 @@
+{
+  "name": "breakmycode-desktop",
+  "version": "1.0.0",
+  "description": "Minimal GUI desktop runner for BreakMyCode stress-testing",
+  "main": "runner.js",
+  "scripts": {
+    "start": "node runner.js",
+    "test": "node test/test-runner.js && node test/test-cpp.js"
+  },
+  "keywords": ["dsa", "stress-test", "competitive-programming"],
+  "author": "",
+  "license": "ISC"
+}

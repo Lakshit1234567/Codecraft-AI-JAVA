@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BreakMyCode — Stress-Testing & Edge-Case Hunter</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">⚡</div>
+        <div>
+          <h1 class="brand-title">BreakMyCode</h1>
+          <span class="brand-subtitle">Differential Stress-Tester & AI Hunter</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="compiler-pills" id="compilerPills">
+          <span class="pill pill-muted" id="pillGpp">C++: ?</span>
+          <span class="pill pill-muted" id="pillPy">Python: ?</span>
+        </div>
+        <button class="icon-btn" id="btnSettings" title="Backend Connection Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Settings Drawer (Collapsible) -->
+    <div class="settings-drawer hidden" id="settingsDrawer">
+      <div class="settings-grid">
+        <label>
+          <span>Backend Server URL:</span>
+          <input type="text" id="cfgBackendUrl" value="http://localhost:8080">
+        </label>
+        <label>
+          <span>Project ID:</span>
+          <input type="number" id="cfgProjectId" value="1">
+        </label>
+        <label>
+          <span>Auth JWT Token (optional):</span>
+          <input type="password" id="cfgAuthToken" placeholder="Bearer eyJhbGci...">
+        </label>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-verify">Sample Verify</button>
+      <button class="tab-btn" data-tab="tab-stress">Stress-Tester</button>
+      <button class="tab-btn" data-tab="tab-deck">Revision Deck <span class="badge" id="deckCountBadge">0</span></button>
+    </nav>
+
+    <!-- TAB 1: SAMPLE VERIFY -->
+    <section class="tab-content active" id="tab-verify">
+      <div class="control-row">
+        <div class="lang-selector">
+          <label>Lang:</label>
+          <select id="sampleLang">
+            <option value="CPP">C++ (g++)</option>
+            <option value="PYTHON">Python</option>
+            <option value="JAVA">Java</option>
+          </select>
+        </div>
+        <span class="shortcut-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to run</span>
+      </div>
+
+      <div class="editor-section">
+        <div class="section-header">
+          <span>Student Solution:</span>
+        </div>
+        <textarea id="sampleSolutionCode" class="code-area" spellcheck="false" placeholder="#include <iostream>
+using namespace std;
+
+int main() {
+    int n;
+    if (cin >> n) {
+        cout << (n * 2) << endl;
+    }
+    return 0;
+}"></textarea>
+      </div>
+
+      <div class="io-grid">
+        <div class="io-box">
+          <label>Sample Input:</label>
+          <textarea id="sampleInput" class="code-area io-area" spellcheck="false" placeholder="42"></textarea>
+        </div>
+        <div class="io-box">
+          <label>Expected Output:</label>
+          <textarea id="sampleExpected" class="code-area io-area" spellcheck="false" placeholder="84"></textarea>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-primary" id="btnRunSingle">▶ Run & Verify</button>
+      </div>
+
+      <!-- Single Run Result Card -->
+      <div class="result-card hidden" id="singleResultCard">
+        <div class="result-header">
+          <span class="status-badge" id="singleStatusBadge">PASSED</span>
+          <span class="runtime-tag" id="singleRuntimeTag">12ms</span>
+        </div>
+        <div class="diff-viewer" id="singleDiffViewer">
+          <!-- Diff renders here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: STRESS-TESTER -->
+    <section class="tab-content" id="tab-stress">
+      <div class="ai-assistant-card">
+        <div class="ai-header">
+          <span>✨ AI Stress-Suite Synthesizer</span>
+          <button class="btn btn-sm btn-ai" id="btnSynthesizeAi">Generate Brute-Force & Generator</button>
+        </div>
+        <textarea id="aiProblemPrompt" class="code-area mini-prompt" placeholder="Paste problem statement or bounds (e.g., 'Array of size 1 <= N <= 10^5, find maximum subarray sum...'). AI will generate guaranteed brute force & bounded generator."></textarea>
+      </div>
+
+      <div class="stress-code-grid">
+        <div class="stress-col">
+          <div class="col-title">Brute-Force Baseline:</div>
+          <textarea id="stressBruteCode" class="code-area stress-area" spellcheck="false" placeholder="// Guaranteed O(N^2) or naive solution"></textarea>
+        </div>
+        <div class="stress-col">
+          <div class="col-title">Test Generator Script:</div>
+          <textarea id="stressGenCode" class="code-area stress-area" spellcheck="false" placeholder="// Generates one random input to stdout"></textarea>
+        </div>
+      </div>
+
+      <div class="stress-controls">
+        <div class="loop-limit">
+          <label>Max Iterations:</label>
+          <input type="number" id="stressIterations" value="300" min="10" max="2000">
+        </div>
+        <button class="btn btn-danger btn-large" id="btnStartStress">🔨 Hammer Solutions</button>
+      </div>
+
+      <!-- Stress Run Progress & Mismatch Box -->
+      <div class="stress-result-card hidden" id="stressResultCard">
+        <div class="result-header">
+          <span class="status-badge" id="stressStatusBadge">MISMATCH FOUND</span>
+          <span class="runtime-tag" id="stressIterationTag">Iteration #42</span>
+        </div>
+
+        <div class="mismatch-details" id="mismatchDetails">
+          <div class="detail-block">
+            <span class="detail-label">Breaking Input:</span>
+            <pre class="code-preview" id="mismatchInput"></pre>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Expected (Brute Force):</span>
+            <pre class="code-preview" id="mismatchExpected"></pre>
+          </div>
+          <div class="detail-block">
+            <span class="detail-label">Actual (Student):</span>
+            <pre class="code-preview" id="mismatchActual"></pre>
+          </div>
+        </div>
+
+        <div class="mismatch-actions">
+          <button class="btn btn-ai" id="btnDiagnoseAi">🧠 Diagnose with AI</button>
+          <button class="btn btn-secondary" id="btnArchiveCase">💾 Save to Revision Deck</button>
+        </div>
+
+        <!-- Live Streaming Diagnosis Container -->
+        <div class="ai-diagnosis-container hidden" id="aiDiagnosisContainer">
+          <div class="diagnosis-header">AI Discrepancy Breakdown:</div>
+          <div class="diagnosis-content" id="aiDiagnosisContent">Thinking...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: REVISION DECK -->
+    <section class="tab-content" id="tab-deck">
+      <div class="deck-header">
+        <h2>Archived Edge-Cases</h2>
+        <button class="btn btn-sm btn-secondary" id="btnRefreshDeck">🔄 Refresh</button>
+      </div>
+      <div class="deck-list" id="deckListContainer">
+        <p class="empty-hint">No failing test cases archived yet. Run the stress tester to hunt for edge cases!</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

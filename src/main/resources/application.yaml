@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: lovable-clone
+    description: this is application
+
+  datasource:
+    url: jdbc:postgresql://localhost:9010/pgvector-test
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+  ai:
+    openai:
+      api-key: ${GROQ_API_KEY:your_groq_api_key}
+      base-url: https://api.groq.com/openai/v1
+      chat:
+        options:
+          model: llama-3.3-70b-versatile
+          temperature: 0.1
+
+jwt:
+  secret-key: ${JWT_SECRET_KEY:as9b7aodlbjfkluosfd789ujeklfnlsduf90b8ha908w74tuqijvlckajdl}
+
+stripe:
+  api:
+    secret: ${STRIPE_API_SECRET:sk_test_placeholder}
+  webhook:
+    secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder}
+
+client.url: ${CLIENT_URL:http://localhost:5173}
+
+logging:
+  level:
+    org.springframework.ai:
+      chat.client: DEBUG
+
+minio:
+  url: ${MINIO_URL:http://localhost:9000}          # or minio:9000 if inside docker network
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  project-bucket: projects

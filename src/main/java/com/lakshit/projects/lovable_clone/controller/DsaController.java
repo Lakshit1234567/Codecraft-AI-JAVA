@@ -31,6 +31,14 @@ public class DsaController {
         return ResponseEntity.ok(dsaStressTestService.synthesizeStressSuite(projectId, request));
     }
 
+    @PostMapping("/run-stress-test")
+    @PreAuthorize("@security.canEditProject(#projectId)")
+    public ResponseEntity<StressTestResultResponse> runStressTest(
+            @PathVariable Long projectId,
+            @RequestBody @Valid RunStressTestRequest request) {
+        return ResponseEntity.ok(dsaStressTestService.runStressTest(projectId, request));
+    }
+
     @PostMapping(value = "/diagnose", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("@security.canEditProject(#projectId)")
     public Flux<ServerSentEvent<StreamResponse>> streamDiagnosis(

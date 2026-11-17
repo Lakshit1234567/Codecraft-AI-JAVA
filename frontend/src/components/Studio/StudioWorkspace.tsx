@@ -5,8 +5,8 @@ import { CodeViewer } from './CodeViewer';
 import { LivePreview } from './LivePreview';
 import { DsaWorkspace } from './DsaWorkspace';
 import { ProjectSummary, ChatMessage, FileNode } from '../../types';
-import { fetchChatHistory, fetchFileTree, fetchFileContent, streamChat } from '../../api/client';
-import { Play, Code, ShieldAlert, Sparkles } from 'lucide-react';
+import { fetchChatHistory, fetchFileTree, fetchFileContent, streamChat, streamWebAdversary } from '../../api/client';
+import { Play, Code, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
 
 interface StudioWorkspaceProps {
   project: ProjectSummary;
@@ -119,23 +119,30 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
     );
   };
 
-  const handleRunAdversary = () => {
+  const handleRunAdversary = async () => {
     setAdversaryRunning(true);
-    setAdversaryReport(null);
-    setTimeout(() => {
-      setAdversaryRunning(false);
-      setAdversaryReport(
-`🚨 Web Adversary Analysis Results:
-- Component: App.tsx
-- Vulnerability Detected: Unhandled null pointer on empty projects state.
-- Layout Discrepancy: Mobile viewport collapse on narrow screens (< 360px).
-- Security Warning: Direct local storage access without schema verification.
-
-💡 Recommended Hardening Diff:
-+  if (!projects || projects.length === 0) return <EmptyState />;
-+  const safeUser = useMemo(() => sanitizeUser(user), [user]);`
+    setAdversaryReport('');
+    try {
+      await streamWebAdversary(
+        project.id,
+        activeFile || 'src/App.tsx',
+        (chunk) => {
+          setAdversaryReport((prev) => (prev || '') + chunk);
+        },
+        () => {
+          setAdversaryRunning(false);
+          loadFiles();
+        },
+        (err) => {
+          console.error('Adversary error:', err);
+          setAdversaryRunning(false);
+          setAdversaryReport((prev) => (prev ? prev + '\n' : '') + 'Error during adversarial scan: ' + (err.message || 'Scan failed'));
+        }
       );
-    }, 1200);
+    } catch (err: any) {
+      setAdversaryRunning(false);
+      setAdversaryReport('Failed to initiate Web Adversary scan: ' + (err.message || 'Unknown error'));
+    }
   };
 
   return (
@@ -217,26 +224,26 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
             <LivePreview projectId={project.id} files={files} activeFile={activeFile} />
           ) : (
             <div className="flex-1 p-6 overflow-y-auto bg-[#0a0f1d] flex flex-col items-center justify-center text-center">
-              <div className="max-w-md w-full space-y-4">
+              <div className="max-w-2xl w-full space-y-4">
                 <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto shadow-lg">
                   <ShieldAlert className="w-6 h-6" />
                 </div>
-                <h3 className="text-base font-bold text-white">AI Web Adversary & Fuzzing</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Triggers malicious and boundary-violating inputs, unexpected react states, and unhandled null evaluations to find breaking bugs before deployment.
+                <h3 className="text-base font-bold text-white">AI Web Adversary & Fuzzing (Live Service)</h3>
+                <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+                  Triggers malicious and boundary-violating inputs, unexpected react states, and unhandled null evaluations to find breaking bugs in <code className="text-rose-300">{activeFile || 'src/App.tsx'}</code> before deployment.
                 </p>
 
                 <button
                   onClick={handleRunAdversary}
                   disabled={adversaryRunning}
-                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center justify-center gap-2 mx-auto shadow-lg shadow-rose-600/20 transition"
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 mx-auto shadow-lg shadow-rose-600/20 transition"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{adversaryRunning ? 'Running Adversarial Fuzzing...' : 'Stress-Test Current Component'}</span>
+                  {adversaryRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  <span>{adversaryRunning ? 'Streaming AI Vulnerability Scan...' : `Stress-Test ${activeFile || 'App.tsx'}`}</span>
                 </button>
 
                 {adversaryReport && (
-                  <div className="mt-6 p-4 rounded-xl bg-slate-900 border border-rose-500/30 text-left text-xs font-mono text-slate-300 leading-relaxed whitespace-pre overflow-x-auto">
+                  <div className="mt-6 p-4 rounded-xl bg-slate-900 border border-rose-500/30 text-left text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto">
                     {adversaryReport}
                   </div>
                 )}

@@ -12,8 +12,10 @@ import {
   ProjectType,
   ProgrammingLanguage,
   DsaSuiteResponse,
+  StressTestResultResponse,
   TestCase,
-  TestCaseStatus
+  TestCaseStatus,
+  K8sPreviewStatusResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -186,6 +188,56 @@ export const streamChat = async (
   }
 };
 
+// Web Adversary AI Scanning (SSE)
+export const streamWebAdversary = async (
+  projectId: number,
+  targetFilePath: string | undefined,
+  onChunk: (chunk: string) => void,
+  onComplete: () => void,
+  onError: (err: any) => void
+) => {
+  const token = getAuthToken();
+  try {
+    const response = await fetch(`/api/projects/${projectId}/break-app`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+      body: JSON.stringify({ targetFilePath }),
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No reader available');
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.trim().startsWith('data:')) {
+          const jsonStr = line.replace('data:', '').trim();
+          try {
+            const p = JSON.parse(jsonStr);
+            if (p.text) onChunk(p.text);
+          } catch {
+            onChunk(jsonStr);
+          }
+        }
+      }
+    }
+    onComplete();
+  } catch (e) {
+    onError(e);
+  }
+};
+
 // Plans & Billing
 export const fetchPlans = async (): Promise<Plan[]> => {
   const res = await api.get<Plan[]>('/plans');
@@ -213,7 +265,7 @@ export const fetchTodayUsage = async (): Promise<UsageToday> => {
   return res.data;
 };
 
-// DSA Suite & Adversary APIs
+// DSA Suite & Stress-Testing APIs
 export const synthesizeDsaSuite = async (
   projectId: number,
   language: ProgrammingLanguage,
@@ -225,6 +277,20 @@ export const synthesizeDsaSuite = async (
     problemDescription,
     userSolution,
   });
+  return res.data;
+};
+
+export const runDsaStressTest = async (
+  projectId: number,
+  data: {
+    language: ProgrammingLanguage;
+    problemDescription: string;
+    studentCode: string;
+    bruteForceCode?: string;
+    generatorCode?: string;
+  }
+): Promise<StressTestResultResponse> => {
+  const res = await api.post<StressTestResultResponse>(`/dsa/${projectId}/run-stress-test`, data);
   return res.data;
 };
 
@@ -308,4 +374,19 @@ export const streamDsaDiagnosis = async (
   } catch (e) {
     onError(e);
   }
+};
+
+// Kubernetes Preview APIs
+export const deployK8sPreview = async (projectId: number): Promise<K8sPreviewStatusResponse> => {
+  const res = await api.post<K8sPreviewStatusResponse>(`/k8s-preview/${projectId}/deploy`);
+  return res.data;
+};
+
+export const getK8sPreviewStatus = async (projectId: number): Promise<K8sPreviewStatusResponse> => {
+  const res = await api.get<K8sPreviewStatusResponse>(`/k8s-preview/${projectId}/status`);
+  return res.data;
+};
+
+export const terminateK8sPreview = async (projectId: number): Promise<void> => {
+  await api.delete(`/k8s-preview/${projectId}`);
 };

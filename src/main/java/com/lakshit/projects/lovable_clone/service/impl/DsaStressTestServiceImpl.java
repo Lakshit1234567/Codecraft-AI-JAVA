@@ -12,6 +12,7 @@ import com.lakshit.projects.lovable_clone.mapper.DsaMapper;
 import com.lakshit.projects.lovable_clone.repository.FailedTestCaseRepository;
 import com.lakshit.projects.lovable_clone.repository.ProjectRepository;
 import com.lakshit.projects.lovable_clone.security.AuthUtil;
+import com.lakshit.projects.lovable_clone.service.DsaCodeExecutor;
 import com.lakshit.projects.lovable_clone.service.DsaStressTestService;
 import com.lakshit.projects.lovable_clone.service.ProjectFileService;
 import com.lakshit.projects.lovable_clone.service.UsageService;
@@ -42,6 +43,7 @@ public class DsaStressTestServiceImpl implements DsaStressTestService {
     private final ProjectFileService projectFileService;
     private final UsageService usageService;
     private final DsaMapper dsaMapper;
+    private final DsaCodeExecutor dsaCodeExecutor;
 
     @Override
     @Transactional
@@ -103,6 +105,73 @@ public class DsaStressTestServiceImpl implements DsaStressTestService {
                 generatorPath,
                 boundsSummary.isEmpty() ? "Bounded for fast differential testing" : boundsSummary
         );
+    }
+
+    @Override
+    @Transactional
+    public StressTestResultResponse runStressTest(Long projectId, RunStressTestRequest request) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project", projectId.toString()));
+
+        String bruteForce = request.bruteForceCode();
+        String generator = request.generatorCode();
+
+        String ext = resolveExtension(request.language());
+        String brutePath = "brute_force." + ext;
+        String genPath = "generator." + ext;
+
+        // If not supplied, try to load from project files or synthesize
+        if (bruteForce == null || bruteForce.isBlank()) {
+            try {
+                bruteForce = projectFileService.getFileContent(projectId, brutePath).content();
+            } catch (Exception ignored) {}
+        }
+        if (generator == null || generator.isBlank()) {
+            try {
+                generator = projectFileService.getFileContent(projectId, genPath).content();
+            } catch (Exception ignored) {}
+        }
+
+        // If still missing, synthesize using LLM
+        if (bruteForce == null || bruteForce.isBlank() || generator == null || generator.isBlank()) {
+            log.info("Brute force or generator missing for projectId {}. Synthesizing now...", projectId);
+            DsaSuiteResponse suite = synthesizeStressSuite(projectId, new DsaSuiteRequest(
+                    request.language(),
+                    request.problemDescription(),
+                    request.studentCode()
+            ));
+            bruteForce = suite.bruteForceCode();
+            generator = suite.generatorCode();
+        }
+
+        // Execute differential fuzzing loop
+        StressTestResultResponse result = dsaCodeExecutor.executeDifferentialTesting(
+                request.language(),
+                generator,
+                bruteForce,
+                request.studentCode(),
+                50
+        );
+
+        // If a breaking counterexample was found, automatically archive it
+        if (result.foundCounterexample() && result.failingInput() != null && !result.failingInput().isBlank()) {
+            try {
+                FailedTestCase failedTestCase = FailedTestCase.builder()
+                        .project(project)
+                        .input(result.failingInput())
+                        .expectedOutput(result.expectedOutput() != null ? result.expectedOutput() : "")
+                        .actualOutput(result.actualOutput() != null ? result.actualOutput() : "")
+                        .explanation(result.message())
+                        .status(TestCaseStatus.FAILING)
+                        .build();
+                failedTestCaseRepository.save(failedTestCase);
+                log.info("Archived failing test case for project #{}: {}", projectId, result.failingInput());
+            } catch (Exception e) {
+                log.warn("Failed to automatically archive counterexample: {}", e.getMessage());
+            }
+        }
+
+        return result;
     }
 
     @Override

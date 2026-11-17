@@ -11,10 +11,18 @@ import {
   RefreshCw,
   Copy,
   Check,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 import { ProjectSummary, ProgrammingLanguage, DsaSuiteResponse, TestCase, TestCaseStatus } from '../../types';
-import { synthesizeDsaSuite, streamDsaDiagnosis, archiveTestCase, fetchTestCases, updateTestCaseStatus } from '../../api/client';
+import { 
+  synthesizeDsaSuite, 
+  runDsaStressTest, 
+  streamDsaDiagnosis, 
+  archiveTestCase, 
+  fetchTestCases, 
+  updateTestCaseStatus 
+} from '../../api/client';
 
 interface DsaWorkspaceProps {
   project: ProjectSummary;
@@ -62,7 +70,9 @@ int main() {
 
   const [activeTab, setActiveTab] = useState<'editor' | 'suite' | 'deck'>('editor');
   const [suite, setSuite] = useState<DsaSuiteResponse | null>(null);
+  const [runningTest, setRunningTest] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Mismatch & Diagnosis State
@@ -70,6 +80,7 @@ int main() {
     input: string;
     expected: string;
     actual: string;
+    explanation?: string;
   } | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosisText, setDiagnosisText] = useState('');
@@ -101,10 +112,12 @@ int main() {
   const handleSynthesizeSuite = async () => {
     setSynthesizing(true);
     setError(null);
+    setStatusMessage(null);
     try {
       const res = await synthesizeDsaSuite(project.id, language, problemDescription, userSolution);
       setSuite(res);
       setActiveTab('suite');
+      setStatusMessage('Adversarial stress suite generated with brute-force solver & random generator.');
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to synthesize DSA suite');
     } finally {
@@ -112,15 +125,50 @@ int main() {
     }
   };
 
-  const handleSimulateStressRun = () => {
-    // Generate a breaking counterexample simulation
-    setMismatch({
-      input: '5\n4 2 0 3 2 5',
-      expected: '9',
-      actual: '8',
-    });
-    setDiagnosisText('');
-    setIsSaved(false);
+  const handleRunStressTest = async () => {
+    setRunningTest(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const res = await runDsaStressTest(project.id, {
+        language,
+        problemDescription,
+        studentCode: userSolution,
+        bruteForceCode: suite?.bruteForceCode,
+        generatorCode: suite?.generatorCode,
+      });
+
+      if (res.bruteForceCode && !suite) {
+        setSuite({
+          projectId: project.id,
+          language,
+          bruteForceCode: res.bruteForceCode,
+          bruteForcePath: 'brute_force.cpp',
+          generatorCode: res.generatorCode || '',
+          generatorPath: 'generator.cpp',
+          inputConstraints: 'Generated dynamically by LLM',
+        });
+      }
+
+      if (res.foundCounterexample && res.failingInput) {
+        setMismatch({
+          input: res.failingInput,
+          expected: res.expectedOutput || 'N/A',
+          actual: res.actualOutput || 'N/A',
+          explanation: res.message,
+        });
+        setDiagnosisText('');
+        setIsSaved(true); // Automatically archived to DB!
+        setActiveTab('suite');
+        setStatusMessage(res.message);
+      } else {
+        setStatusMessage(res.message || `All ${res.iterationsRun} stress test iterations passed!`);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || 'Execution failed');
+    } finally {
+      setRunningTest(false);
+    }
   };
 
   const handleDiagnose = async () => {
@@ -160,7 +208,7 @@ int main() {
         input: mismatch.input,
         expectedOutput: mismatch.expected,
         actualOutput: mismatch.actual,
-        explanation: diagnosisText || 'Off-by-one edge condition detected during differential fuzzing loop.',
+        explanation: diagnosisText || mismatch.explanation || 'Edge condition detected during differential fuzzing loop.',
       });
       setIsSaved(true);
     } catch (err: any) {
@@ -192,7 +240,7 @@ int main() {
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            <span>Solution Editor</span>
+            <span>Problem & Solution</span>
           </button>
 
           <button
@@ -204,7 +252,7 @@ int main() {
             }`}
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>Fuzzer & Stress Suite {suite && '•'}</span>
+            <span>Fuzzing Counterexample {mismatch && '•'}</span>
           </button>
 
           <button
@@ -220,18 +268,33 @@ int main() {
           </button>
         </div>
 
-        {/* Language Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-500 font-mono">Language:</span>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as ProgrammingLanguage)}
-            className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"
+        {/* Language Selector & Quick Run */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500 font-mono">Language:</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as ProgrammingLanguage)}
+              className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-500"
+            >
+              <option value="CPP">C++17 (g++)</option>
+              <option value="PYTHON">Python 3</option>
+              <option value="JAVA">Java 21</option>
+            </select>
+          </div>
+
+          <button
+            onClick={handleRunStressTest}
+            disabled={runningTest}
+            className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition"
           >
-            <option value="CPP">C++17 (-O3)</option>
-            <option value="PYTHON">Python 3</option>
-            <option value="JAVA">Java 21</option>
-          </select>
+            {runningTest ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Play className="w-3.5 h-3.5 fill-current" />
+            )}
+            <span>{runningTest ? 'Running 50 Fuzz Tests...' : 'Run Differential Fuzzing'}</span>
+          </button>
         </div>
       </div>
 
@@ -239,6 +302,16 @@ int main() {
         <div className="p-3 mx-4 mt-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {statusMessage && (
+        <div className="p-3 mx-4 mt-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            {statusMessage}
+          </span>
+          <button onClick={() => setStatusMessage(null)}>✕</button>
         </div>
       )}
 
@@ -265,24 +338,31 @@ int main() {
                 <div>
                   <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-amber-400" />
-                    AI Adversarial Synthesis
+                    AI Adversarial Differential Testing
                   </h4>
                   <p className="text-[11px] text-slate-400">
-                    Spring AI writes guaranteed naive $O(N^2)$ solver & random bounded test generator.
+                    Runs LLM brute force vs your solution against random inputs to catch failing edge cases.
                   </p>
                 </div>
-                <button
-                  onClick={handleSynthesizeSuite}
-                  disabled={synthesizing}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition"
-                >
-                  {synthesizing ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Zap className="w-3.5 h-3.5" />
-                  )}
-                  <span>Synthesize Stress Suite</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSynthesizeSuite}
+                    disabled={synthesizing}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-medium text-xs flex items-center gap-1.5 transition border border-slate-700"
+                  >
+                    {synthesizing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                    <span>View Generated Scripts</span>
+                  </button>
+
+                  <button
+                    onClick={handleRunStressTest}
+                    disabled={runningTest}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition"
+                  >
+                    {runningTest ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                    <span>Execute 50 Fuzz Tests</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -291,9 +371,9 @@ int main() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                   <Terminal className="w-4 h-4 text-indigo-400" />
-                  Optimal Solution Code ({language})
+                  Your Solution Code ({language})
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">Run via Desktop Client</span>
+                <span className="text-[10px] text-slate-500 font-mono">Backend Execution Engine</span>
               </div>
               <textarea
                 value={userSolution}
@@ -313,12 +393,12 @@ int main() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
                     <Zap className="w-3.5 h-3.5" />
-                    Generated Naive Brute-Force Solver
+                    LLM-Generated Naive Brute-Force Solver
                   </span>
                   <span className="text-[10px] text-slate-500 font-mono">{suite?.bruteForcePath || 'brute_force.cpp'}</span>
                 </div>
                 <pre className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 max-h-56 overflow-y-auto">
-                  {suite?.bruteForceCode || '// Click "Synthesize Stress Suite" in the editor tab to generate'}
+                  {suite?.bruteForceCode || '// Run differential fuzzing to generate or compile'}
                 </pre>
               </div>
 
@@ -326,7 +406,7 @@ int main() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5" />
-                    Input Generator Script
+                    LLM-Generated Random Input Generator
                   </span>
                   <span className="text-[10px] text-slate-500 font-mono">{suite?.generatorPath || 'generator.cpp'}</span>
                 </div>
@@ -336,11 +416,12 @@ int main() {
               </div>
 
               <button
-                onClick={handleSimulateStressRun}
-                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition"
+                onClick={handleRunStressTest}
+                disabled={runningTest}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition"
               >
-                <Play className="w-4 h-4" />
-                <span>Simulate High-Speed Fuzzing Loop (100 runs/sec)</span>
+                {runningTest ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                <span>{runningTest ? 'Executing Fuzz Tests in Backend...' : 'Re-Run Differential Fuzzing in Backend'}</span>
               </button>
             </div>
 
@@ -356,17 +437,17 @@ int main() {
                   <div className="space-y-3">
                     <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
                       <div className="text-[10px] text-slate-500 font-mono mb-1">Breaking Input (stdin):</div>
-                      <div className="text-xs font-mono text-amber-300">{mismatch.input}</div>
+                      <div className="text-xs font-mono text-amber-300 whitespace-pre">{mismatch.input}</div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20">
                         <div className="text-[10px] text-emerald-400 font-mono mb-1">Expected Output (Brute):</div>
-                        <div className="text-sm font-mono text-emerald-300 font-bold">{mismatch.expected}</div>
+                        <div className="text-sm font-mono text-emerald-300 font-bold whitespace-pre">{mismatch.expected}</div>
                       </div>
                       <div className="p-3 rounded-lg bg-rose-950/20 border border-rose-500/20">
                         <div className="text-[10px] text-rose-400 font-mono mb-1">Actual Output (Your Code):</div>
-                        <div className="text-sm font-mono text-rose-300 font-bold">{mismatch.actual}</div>
+                        <div className="text-sm font-mono text-rose-300 font-bold whitespace-pre">{mismatch.actual}</div>
                       </div>
                     </div>
 
@@ -394,13 +475,17 @@ int main() {
                   </div>
                 ) : (
                   <div className="py-20 text-center text-slate-500 text-xs">
-                    Run the stress test or click simulate to detect breaking counterexamples.
+                    Click "Run Differential Fuzzing" to execute randomized testcases against your solution.
                   </div>
                 )}
               </div>
 
               {mismatch && (
-                <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
+                <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between items-center">
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Archived to Database</span>
+                  </div>
                   <button
                     onClick={handleSaveToDeck}
                     disabled={isSaved}
@@ -490,8 +575,7 @@ int main() {
                         tc.status === 'FAILING'
                           ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
+                      }`}>
                       <CheckCircle className="w-3.5 h-3.5" />
                       <span>{tc.status === 'FAILING' ? 'Mark Resolved' : 'Re-open'}</span>
                     </button>

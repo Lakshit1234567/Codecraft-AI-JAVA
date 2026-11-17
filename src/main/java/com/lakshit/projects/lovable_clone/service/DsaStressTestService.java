@@ -11,6 +11,8 @@ public interface DsaStressTestService {
 
     DsaSuiteResponse synthesizeStressSuite(Long projectId, DsaSuiteRequest request);
 
+    StressTestResultResponse runStressTest(Long projectId, RunStressTestRequest request);
+
     Flux<StreamResponse> streamDiagnosis(Long projectId, DiagnoseFailureRequest request);
 
     TestCaseResponse archiveTestCase(Long projectId, TestCaseRequest request);

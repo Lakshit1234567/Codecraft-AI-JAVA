@@ -102,6 +102,17 @@ export interface DsaSuiteResponse {
   inputConstraints: string;
 }
 
+export interface StressTestResultResponse {
+  foundCounterexample: boolean;
+  failingInput?: string;
+  expectedOutput?: string;
+  actualOutput?: string;
+  message: string;
+  iterationsRun: number;
+  bruteForceCode?: string;
+  generatorCode?: string;
+}
+
 export interface TestCase {
   id: number;
   projectId: number;
@@ -111,4 +122,17 @@ export interface TestCase {
   explanation: string;
   status: TestCaseStatus;
   createdAt: string;
+}
+
+// Kubernetes Preview
+export interface K8sPreviewStatusResponse {
+  projectId: number;
+  podName: string;
+  status: string;
+  cluster: string;
+  nodeName: string;
+  podIp: string;
+  previewUrl: string;
+  logs: string;
+  port: number;
 }

@@ -45,12 +45,19 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
     }
   };
 
-  const loadFiles = async () => {
+  const loadFiles = async (preferredFile?: string) => {
     try {
       const res = await fetchFileTree(project.id);
-      setFiles(res.files || []);
-      if (res.files && res.files.length > 0 && !activeFile) {
-        handleSelectFile(res.files[0].path);
+      const treeFiles = res.files || [];
+      setFiles(treeFiles);
+
+      const target = preferredFile || activeFile;
+      if (treeFiles.length > 0) {
+        if (target && treeFiles.some((f) => f.path === target)) {
+          handleSelectFile(target);
+        } else {
+          handleSelectFile(treeFiles[0].path);
+        }
       }
     } catch (err) {
       console.error('Failed to load file tree:', err);
@@ -91,10 +98,19 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
       () => {
         setIsStreaming(false);
         setStreamingText('');
+        // Immediately reload chats & files
+        loadChat();
+        loadFiles();
+
+        // Background polls to capture async finalizeChats write
         setTimeout(() => {
           loadChat();
           loadFiles();
-        }, 1500);
+        }, 1200);
+
+        setTimeout(() => {
+          loadFiles();
+        }, 2800);
       },
       (error) => {
         console.error('Streaming error:', error);

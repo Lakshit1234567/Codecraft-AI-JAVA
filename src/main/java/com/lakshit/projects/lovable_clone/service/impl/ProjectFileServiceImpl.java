@@ -10,12 +10,12 @@ import com.lakshit.projects.lovable_clone.mapper.ProjectFileMapper;
 import com.lakshit.projects.lovable_clone.repository.ProjectFileRepository;
 import com.lakshit.projects.lovable_clone.repository.ProjectRepository;
 import com.lakshit.projects.lovable_clone.service.ProjectFileService;
-import io.minio.GetObjectArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
+import com.lakshit.projects.lovable_clone.service.ProjectTemplateService;
+import io.minio.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -34,23 +34,33 @@ public class ProjectFileServiceImpl implements ProjectFileService {
     private final ProjectFileRepository projectFileRepository;
     private final MinioClient minioClient;
     private final ProjectFileMapper projectFileMapper;
+    @Lazy
+    private final ProjectTemplateService projectTemplateService;
 
     @Value("${minio.project-bucket}")
     private String projectBucket;
 
     private static final String BUCKET_NAME = "projects";
 
-
     @Override
     public FileTreeResponse getFileTree(Long projectId) {
         List<ProjectFile> projectFileList = projectFileRepository.findByProjectId(projectId);
+        if (projectFileList.isEmpty()) {
+            try {
+                projectTemplateService.initializeProjectFromTemplate(projectId);
+                projectFileList = projectFileRepository.findByProjectId(projectId);
+            } catch (Exception e) {
+                log.warn("Failed to auto-initialize template for project #{}: {}", projectId, e.getMessage());
+            }
+        }
         List<FileNode> projectFileNodes = projectFileMapper.toListOfFileNode(projectFileList);
         return new FileTreeResponse(projectFileNodes);
     }
 
     @Override
     public FileContentResponse getFileContent(Long projectId, String path) {
-        String objectName = projectId + "/" + path;
+        String cleanPath = path.startsWith("/") ? path.substring(1) : path;
+        String objectName = projectId + "/" + cleanPath;
         try (
                 InputStream is = minioClient.getObject(
                         GetObjectArgs.builder()
@@ -59,9 +69,9 @@ public class ProjectFileServiceImpl implements ProjectFileService {
                                 .build())) {
 
             String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            return new FileContentResponse(path, content);
+            return new FileContentResponse(cleanPath, content);
         } catch (Exception e) {
-            log.error("Failed to read file: {}/{}", projectId, path, e);
+            log.error("Failed to read file: {}/{}", projectId, cleanPath, e);
             throw new RuntimeException("Failed to read file content", e);
         }
     }
@@ -76,6 +86,8 @@ public class ProjectFileServiceImpl implements ProjectFileService {
         String objectKey = projectId + "/" + cleanPath;
 
         try {
+            ensureBucketExists(projectBucket);
+
             byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
             InputStream inputStream = new ByteArrayInputStream(contentBytes);
             // saving the file content
@@ -103,7 +115,17 @@ public class ProjectFileServiceImpl implements ProjectFileService {
             log.error("Failed to save file {}/{}", projectId, cleanPath, e);
             throw new RuntimeException("File save failed", e);
         }
+    }
 
+    private void ensureBucketExists(String bucketName) {
+        try {
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!exists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to check/create bucket {}: {}", bucketName, e.getMessage());
+        }
     }
 
     private String determineContentType(String path) {

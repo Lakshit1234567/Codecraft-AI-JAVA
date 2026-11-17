@@ -49,17 +49,39 @@ public class FileTreeContextAdvisor implements StreamAdvisor {
                 .filter(m -> m.getMessageType() != MessageType.SYSTEM)
                 .toList();
 
-        List<Message> allMessages = new ArrayList<>();
-
-        // Add original system message
-        if (systemMessage != null) {
-            allMessages.add(systemMessage);
+        StringBuilder systemContentBuilder = new StringBuilder();
+        if (systemMessage != null && systemMessage.getText() != null) {
+            systemContentBuilder.append(systemMessage.getText()).append("\n\n");
         }
 
         List<FileNode> fileTree = projectFileService.getFileTree(projectId).files();
-        String fileTreeContext = "\n\n ---- FILE_TREE ----\n"+fileTree.toString();
-        allMessages.add(new SystemMessage(fileTreeContext));
+        systemContentBuilder.append("---- PROJECT FILE TREE ----\n");
+        if (fileTree != null && !fileTree.isEmpty()) {
+            for (FileNode node : fileTree) {
+                systemContentBuilder.append("- ").append(node.path()).append("\n");
+            }
 
+            // Include content of key existing source files to prevent unnecessary tool calls
+            systemContentBuilder.append("\n---- EXISTING SOURCE FILES ----\n");
+            for (FileNode node : fileTree) {
+                String path = node.path();
+                if (path.endsWith(".tsx") || path.endsWith(".ts") || path.endsWith(".css")) {
+                    try {
+                        String content = projectFileService.getFileContent(projectId, path).content();
+                        if (content != null && content.length() < 4000) {
+                            systemContentBuilder.append("\n--- START OF FILE: ").append(path).append(" ---\n");
+                            systemContentBuilder.append(content).append("\n");
+                            systemContentBuilder.append("--- END OF FILE ---\n");
+                        }
+                    } catch (Exception e) {
+                        log.debug("Skipped file content for context: {}", path);
+                    }
+                }
+            }
+        }
+
+        List<Message> allMessages = new ArrayList<>();
+        allMessages.add(new SystemMessage(systemContentBuilder.toString()));
         allMessages.addAll(userMessages);
 
         return request
@@ -67,7 +89,6 @@ public class FileTreeContextAdvisor implements StreamAdvisor {
                 .prompt(new Prompt(allMessages, request.prompt().getOptions()))
                 .build();
     }
-
 
     @Override
     public String getName() {
@@ -79,18 +100,3 @@ public class FileTreeContextAdvisor implements StreamAdvisor {
         return 0;
     }
 }
-
-
-
-
-
-
-// System Prompt + File Tree + User message
-
-
-
-
-
-
-
-

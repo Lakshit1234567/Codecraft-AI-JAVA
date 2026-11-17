@@ -30,10 +30,10 @@ public class WebSecurityConfig {
                 .csrf(csrfConfig -> csrfConfig.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sessionConfig -> sessionConfig.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .securityContext(context -> context.requireExplicitSave(false))
                 .authorizeHttpRequests(auth -> auth
-                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers("/api/auth/login", "/api/auth/signup", "/api/plans", "/webhooks/**").permitAll()
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/signup", "/api/plans", "/webhooks/**", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)

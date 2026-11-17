@@ -8,7 +8,6 @@ import com.lakshit.projects.lovable_clone.error.ResourceNotFoundException;
 import com.lakshit.projects.lovable_clone.llm.LlmResponseParser;
 import com.lakshit.projects.lovable_clone.llm.PromptUtils;
 import com.lakshit.projects.lovable_clone.llm.advisors.FileTreeContextAdvisor;
-import com.lakshit.projects.lovable_clone.llm.tools.CodeGenerationTools;
 import com.lakshit.projects.lovable_clone.repository.*;
 import com.lakshit.projects.lovable_clone.security.AuthUtil;
 import com.lakshit.projects.lovable_clone.service.AiGenerationService;
@@ -25,9 +24,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -64,7 +61,6 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         );
 
         StringBuilder fullResponseBuffer = new StringBuilder();
-        CodeGenerationTools codeGenerationTools = new CodeGenerationTools(projectFileService, projectId);
 
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
         AtomicReference<Long> endTime = new AtomicReference<>(0L);
@@ -73,7 +69,6 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         return chatClient.prompt()
                 .system(PromptUtils.CODE_GENERATION_SYSTEM_PROMPT)
                 .user(userMessage)
-                .tools(codeGenerationTools)
                 .advisors(advisorSpec -> {
                             advisorSpec.params(advisorParams);
                             advisorSpec.advisors(fileTreeContextAdvisor);
@@ -82,38 +77,56 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                 .stream()
                 .chatResponse()
                 .doOnNext(response -> {
+                    if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
+                        if (response != null && response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                            usageRef.set(response.getMetadata().getUsage());
+                        }
+                        return;
+                    }
+
                     String content = response.getResult().getOutput().getText();
 
-                    if(content != null && !content.isEmpty() && endTime.get() == 0) { // first non-empty chunk received
-                        endTime.set(System.currentTimeMillis());
+                    if (content != null && !content.isEmpty()) {
+                        if (endTime.get() == 0) {
+                            endTime.set(System.currentTimeMillis());
+                        }
+                        fullResponseBuffer.append(content);
                     }
 
-                    if(response.getMetadata().getUsage() != null) {
+                    if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
                         usageRef.set(response.getMetadata().getUsage());
                     }
-
-                    fullResponseBuffer.append(content);
                 })
                 .doOnComplete(() -> {
                     Schedulers.boundedElastic().schedule(() -> {
-//                        parseAndSaveFiles(fullResponseBuffer.toString(), projectId);
-
-                        long duration = (endTime.get() - startTime.get()) /  1000;
-                        finalizeChats(userMessage, chatSession, fullResponseBuffer.toString(), duration, usageRef.get());
+                        try {
+                            long duration = (endTime.get() - startTime.get()) / 1000;
+                            if (duration < 0) duration = 0;
+                            finalizeChats(userMessage, chatSession, fullResponseBuffer.toString(), duration, usageRef.get());
+                        } catch (Exception e) {
+                            log.error("Failed to finalize chats and save files for projectId: {}", projectId, e);
+                        }
                     });
                 })
-                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId))
+                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId, error))
                 .map(response -> {
-                    String text = response.getResult().getOutput().getText();
+                    String text = "";
+                    if (response != null && response.getResult() != null && response.getResult().getOutput() != null) {
+                        text = response.getResult().getOutput().getText();
+                    }
                     return new StreamResponse(text != null ? text : "");
                 });
     }
 
     private void finalizeChats(String userMessage, ChatSession chatSession, String fullText, Long duration, Usage usage) {
         Long projectId = chatSession.getProject().getId();
+        log.info("Finalizing chat for projectId={}, textLength={}", projectId, fullText != null ? fullText.length() : 0);
 
-        if(usage != null) {
-            int totalTokens = usage.getTotalTokens();
+        int promptTokens = (usage != null && usage.getPromptTokens() != null) ? usage.getPromptTokens() : 0;
+        int completionTokens = (usage != null && usage.getCompletionTokens() != null) ? usage.getCompletionTokens() : 0;
+        int totalTokens = (usage != null && usage.getTotalTokens() != null) ? usage.getTotalTokens() : (promptTokens + completionTokens);
+
+        if(totalTokens > 0) {
             usageService.recordTokenUsage(chatSession.getUser().getId(), totalTokens);
         }
 
@@ -123,15 +136,15 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                         .chatSession(chatSession)
                         .role(MessageRole.USER)
                         .content(userMessage)
-                        .tokensUsed(usage.getPromptTokens())
+                        .tokensUsed(promptTokens)
                         .build()
         );
 
         ChatMessage assistantChatMessage = ChatMessage.builder()
                 .role(MessageRole.ASSISTANT)
-                .content("Assistant Message here...")
+                .content(fullText != null && !fullText.isEmpty() ? fullText : "Assistant response")
                 .chatSession(chatSession)
-                .tokensUsed(usage.getCompletionTokens())
+                .tokensUsed(completionTokens)
                 .build();
 
         assistantChatMessage = chatMessageRepository.save(assistantChatMessage);
@@ -144,11 +157,19 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                         .sequenceOrder(0)
                 .build());
 
-        chatEventList.stream()
-                .filter(e -> e.getType() == ChatEventType.FILE_EDIT)
-                .forEach(e -> projectFileService.saveFile(projectId, e.getFilePath(), e.getContent()));
+        for (ChatEvent event : chatEventList) {
+            if (event.getType() == ChatEventType.FILE_EDIT && event.getFilePath() != null && event.getContent() != null) {
+                log.info("Saving generated file: projectId={}, path={}", projectId, event.getFilePath());
+                try {
+                    projectFileService.saveFile(projectId, event.getFilePath(), event.getContent());
+                } catch (Exception ex) {
+                    log.error("Failed to save file: projectId={}, path={}", projectId, event.getFilePath(), ex);
+                }
+            }
+        }
 
         chatEventRepository.saveAll(chatEventList);
+        log.info("Chat finalized successfully for projectId={}, saved {} events", projectId, chatEventList.size());
     }
 
     private ChatSession createChatSessionIfNotExists(Long projectId, Long userId) {

@@ -17,6 +17,12 @@ desktop-client/.temp/
 desktop-client/node_modules/
 .temp/
 
+# Frontend dependencies & build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/*.log
+frontend/*.tsbuildinfo
+
 # Maven wrapper jar
 .mvn/wrapper/maven-wrapper.jar
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Plus, FolderGit2, Check, ArrowRight, ShieldCheck, Globe, Zap } from 'lucide-react';
+import { X, Plus, FolderGit2, Check, ArrowRight, ShieldCheck, Globe, Zap, Trash2 } from 'lucide-react';
 import { ProjectSummary, ProjectType } from '../types';
-import { createProject } from '../api/client';
+import { createProject, deleteProject } from '../api/client';
 
 interface ProjectListModalProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface ProjectListModalProps {
   currentProjectId: number | null;
   onSelectProject: (project: ProjectSummary) => void;
   onProjectCreated: (project: ProjectSummary) => void;
+  onProjectDeleted?: (projectId: number) => void;
   onClose: () => void;
 }
 
@@ -18,12 +19,14 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
   currentProjectId,
   onSelectProject,
   onProjectCreated,
+  onProjectDeleted,
   onClose,
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectType, setNewProjectType] = useState<ProjectType>('WEB_APP');
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -47,6 +50,25 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
     }
   };
 
+  const handleDelete = async (e: React.MouseEvent, projectId: number, projectName: string) => {
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete "${projectName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingId(projectId);
+    try {
+      await deleteProject(projectId);
+      if (onProjectDeleted) {
+        onProjectDeleted(projectId);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.message || err.message || 'Failed to delete project');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
       <div className="w-full max-w-lg bg-[#101726] border border-slate-800 rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[85vh]">
@@ -66,17 +88,34 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
         {/* Create Project Section */}
         <div className="mt-4">
           {!isCreating ? (
-            <button
-              onClick={() => setIsCreating(true)}
-              className="w-full py-2.5 px-3 rounded-xl border border-dashed border-indigo-500/40 hover:border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-300 text-xs font-medium flex items-center justify-center gap-2 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Project</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setNewProjectType('WEB_APP');
+                  setIsCreating(true);
+                }}
+                className="py-2.5 px-3 rounded-xl border border-dashed border-indigo-500/40 hover:border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-300 text-xs font-medium flex items-center justify-center gap-2 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Web App</span>
+              </button>
+              <button
+                onClick={() => {
+                  setNewProjectType('DSA');
+                  setIsCreating(true);
+                }}
+                className="py-2.5 px-3 rounded-xl border border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 text-amber-300 text-xs font-medium flex items-center justify-center gap-2 transition"
+              >
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>+ DSA Fuzzer</span>
+              </button>
+            </div>
           ) : (
             <form onSubmit={handleCreate} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200">Initialize New Project</span>
+                <span className="text-xs font-semibold text-slate-200">
+                  Initialize New {newProjectType === 'DSA' ? 'DSA Fuzzing' : 'Web App'} Project
+                </span>
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
@@ -100,7 +139,7 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
                   <Globe className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
                   <div>
                     <h5 className="text-xs font-semibold">Web App</h5>
-                    <p className="text-[10px] text-slate-400">React + AI Generation</p>
+                    <p className="text-[10px] text-slate-400">React + Live Preview</p>
                   </div>
                 </button>
 
@@ -116,7 +155,7 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
                   <Zap className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <div>
                     <h5 className="text-xs font-semibold">DSA Fuzzer</h5>
-                    <p className="text-[10px] text-slate-400">Stress Test & Diagnosis</p>
+                    <p className="text-[10px] text-slate-400">Stress Test & Edge Cases</p>
                   </div>
                 </button>
               </div>
@@ -162,7 +201,7 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
                     onSelectProject(proj);
                     onClose();
                   }}
-                  className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between ${
+                  className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between group ${
                     isSelected
                       ? 'bg-indigo-600/10 border-indigo-500/50 shadow-md'
                       : 'bg-slate-900/60 border-slate-800 hover:bg-slate-900 hover:border-slate-700'
@@ -194,12 +233,23 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 text-slate-400">
-                    {isSelected ? (
-                      <Check className="w-4 h-4 text-indigo-400" />
-                    ) : (
-                      <ArrowRight className="w-4 h-4 hover:translate-x-0.5 transition" />
-                    )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => handleDelete(e, proj.id, proj.name)}
+                      disabled={deletingId === proj.id}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition opacity-80 group-hover:opacity-100"
+                      title="Delete Project"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="text-slate-400">
+                      {isSelected ? (
+                        <Check className="w-4 h-4 text-indigo-400" />
+                      ) : (
+                        <ArrowRight className="w-4 h-4 hover:translate-x-0.5 transition" />
+                      )}
+                    </div>
                   </div>
                 </div>
               );

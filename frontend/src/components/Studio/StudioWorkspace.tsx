@@ -214,7 +214,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
               />
             </div>
           ) : activeTab === 'preview' ? (
-            <LivePreview filesCount={files.length} />
+            <LivePreview projectId={project.id} files={files} activeFile={activeFile} />
           ) : (
             <div className="flex-1 p-6 overflow-y-auto bg-[#0a0f1d] flex flex-col items-center justify-center text-center">
               <div className="max-w-md w-full space-y-4">

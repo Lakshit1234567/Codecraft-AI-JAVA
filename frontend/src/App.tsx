@@ -5,14 +5,16 @@ import { ProjectListModal } from './components/ProjectListModal';
 import { MembersModal } from './components/MembersModal';
 import { PlansModal } from './components/PlansModal';
 import { StudioWorkspace } from './components/Studio/StudioWorkspace';
-import { User, ProjectSummary } from './types';
-import { fetchProjects, getAuthToken, clearAuthToken } from './api/client';
+import { DsaWorkspace } from './components/Studio/DsaWorkspace';
+import { User, ProjectSummary, ProjectType } from './types';
+import { fetchProjects, getAuthToken, clearAuthToken, deleteProject } from './api/client';
 import { FolderGit2, Plus, Sparkles, Zap, Shield, Crown } from 'lucide-react';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [currentProject, setCurrentProject] = useState<ProjectSummary | null>(null);
+  const [activeMode, setActiveMode] = useState<ProjectType>('WEB_APP');
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -37,13 +39,21 @@ export function App() {
     }
   }, []);
 
+  // Update activeMode whenever currentProject changes
+  useEffect(() => {
+    if (currentProject?.type) {
+      setActiveMode(currentProject.type);
+    }
+  }, [currentProject?.id]);
+
   const loadProjects = async () => {
     setLoading(true);
     try {
       const data = await fetchProjects();
       setProjects(data);
-      if (data.length > 0) {
+      if (data.length > 0 && !currentProject) {
         setCurrentProject(data[0]);
+        setActiveMode(data[0].type || 'WEB_APP');
       }
     } catch (err) {
       console.error('Failed to load projects:', err);
@@ -69,6 +79,30 @@ export function App() {
   const handleProjectCreated = (newProject: ProjectSummary) => {
     setProjects((prev) => [newProject, ...prev]);
     setCurrentProject(newProject);
+    setActiveMode(newProject.type || 'WEB_APP');
+  };
+
+  const handleDeleteProject = async (projectId: number) => {
+    try {
+      await deleteProject(projectId);
+      setProjects((prev) => {
+        const remaining = prev.filter((p) => p.id !== projectId);
+        if (currentProject?.id === projectId) {
+          const next = remaining.length > 0 ? remaining[0] : null;
+          setCurrentProject(next);
+          if (next) setActiveMode(next.type || 'WEB_APP');
+        }
+        return remaining;
+      });
+    } catch (err: any) {
+      console.error('Failed to delete project:', err);
+      alert(err.response?.data?.message || err.message || 'Failed to delete project');
+    }
+  };
+
+  const handleSelectProject = (project: ProjectSummary) => {
+    setCurrentProject(project);
+    setActiveMode(project.type || 'WEB_APP');
   };
 
   return (
@@ -76,16 +110,23 @@ export function App() {
       <Navbar
         user={user}
         currentProject={currentProject}
+        activeMode={activeMode}
+        onChangeMode={(mode) => setActiveMode(mode)}
         onOpenProjects={() => setProjectsOpen(true)}
         onOpenMembers={() => setMembersOpen(true)}
         onOpenPlans={() => setPlansOpen(true)}
         onOpenAuth={() => setAuthOpen(true)}
+        onDeleteProject={currentProject ? () => handleDeleteProject(currentProject.id) : undefined}
         onLogout={handleLogout}
       />
 
       <main className="flex-1 flex overflow-hidden">
         {currentProject ? (
-          <StudioWorkspace key={currentProject.id} project={currentProject} />
+          activeMode === 'DSA' ? (
+            <DsaWorkspace key={`dsa-${currentProject.id}`} project={currentProject} />
+          ) : (
+            <StudioWorkspace key={`studio-${currentProject.id}`} project={currentProject} />
+          )
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center relative overflow-hidden">
             {/* Ambient Background Glow */}
@@ -134,8 +175,9 @@ export function App() {
         isOpen={projectsOpen}
         projects={projects}
         currentProjectId={currentProject ? currentProject.id : null}
-        onSelectProject={(p) => setCurrentProject(p)}
+        onSelectProject={handleSelectProject}
         onProjectCreated={handleProjectCreated}
+        onProjectDeleted={handleDeleteProject}
         onClose={() => setProjectsOpen(false)}
       />
 

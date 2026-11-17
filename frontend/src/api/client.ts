@@ -79,6 +79,10 @@ export const createProject = async (name: string, type: ProjectType = 'WEB_APP')
   return res.data;
 };
 
+export const deleteProject = async (projectId: number): Promise<void> => {
+  await api.delete(`/projects/${projectId}`);
+};
+
 // Project Members
 export const fetchProjectMembers = async (projectId: number): Promise<ProjectMember[]> => {
   const res = await api.get<ProjectMember[]>(`/projects/${projectId}/members`);

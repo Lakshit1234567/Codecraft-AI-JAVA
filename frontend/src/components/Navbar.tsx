@@ -9,28 +9,36 @@ import {
   Crown,
   Zap,
   Activity,
-  Layers
+  Globe,
+  Trash2,
+  UserPlus
 } from 'lucide-react';
-import { ProjectSummary, User, Subscription, UsageToday } from '../types';
+import { ProjectSummary, User, Subscription, UsageToday, ProjectType } from '../types';
 import { fetchMySubscription, fetchTodayUsage } from '../api/client';
 
 interface NavbarProps {
   user: User | null;
   currentProject: ProjectSummary | null;
+  activeMode: ProjectType;
+  onChangeMode: (mode: ProjectType) => void;
   onOpenProjects: () => void;
   onOpenMembers: () => void;
   onOpenAuth: () => void;
   onOpenPlans: () => void;
+  onDeleteProject?: (projectId: number) => void;
   onLogout: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   user,
   currentProject,
+  activeMode,
+  onChangeMode,
   onOpenProjects,
   onOpenMembers,
   onOpenAuth,
   onOpenPlans,
+  onDeleteProject,
   onLogout,
 }) => {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -64,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="h-14 border-b border-[#1f293d] bg-[#0c1220]/90 backdrop-blur px-4 flex items-center justify-between z-30 select-none">
-      {/* Left: Brand & Project Selector */}
+      {/* Left: Brand, Project Selector & Mode Switcher */}
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -83,32 +91,43 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-xs sm:text-sm font-medium transition text-slate-200 hover:text-white"
         >
           <FolderGit2 className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="max-w-[120px] sm:max-w-[160px] truncate">
+          <span className="max-w-[120px] sm:max-w-[150px] truncate">
             {currentProject ? currentProject.name : 'Select Project'}
           </span>
           <ChevronDown className="w-3 h-3 text-slate-400" />
         </button>
 
+        {/* Mode Toggle: Web Studio vs DSA Engine */}
         {currentProject && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
-              {currentProject.role}
-            </span>
-            {currentProject.type && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border hidden md:inline ${
-                currentProject.type === 'DSA'
-                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
-                  : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'
-              }`}>
-                {currentProject.type === 'DSA' ? '⚡ DSA Engine' : '🌐 Web App'}
-              </span>
-            )}
+          <div className="hidden md:flex items-center bg-slate-900 border border-slate-800 p-0.5 rounded-lg">
+            <button
+              onClick={() => onChangeMode('WEB_APP')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                activeMode === 'WEB_APP'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Web Studio</span>
+            </button>
+            <button
+              onClick={() => onChangeMode('DSA')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                activeMode === 'DSA'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-amber-300'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>DSA Fuzzer</span>
+            </button>
           </div>
         )}
       </div>
 
-      {/* Right: Plans, Usage & User Actions */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right: Plans, Add Member, Delete Project & User Actions */}
+      <div className="flex items-center gap-2 sm:gap-2.5">
         {/* Token Usage Meter */}
         {usage && (
           <div 
@@ -124,10 +143,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* Plan Upgrade Badge / Button */}
+        {/* Plan Upgrade Badge */}
         <button
           onClick={onOpenPlans}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm ${
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm ${
             isEnterprise
               ? 'bg-purple-950/60 border border-purple-500/40 text-purple-200 hover:bg-purple-900/60'
               : isPro
@@ -144,21 +163,33 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="sm:hidden">Plans</span>
         </button>
 
+        {/* Add Member Button */}
         {currentProject && (
           <button
             onClick={onOpenMembers}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-800/80 text-xs font-medium text-slate-300 hover:text-white transition border border-transparent hover:border-slate-700"
-            title="Project Members"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 hover:text-white transition border border-slate-700 shadow-sm"
+            title="Invite Team Members"
           >
-            <Users className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden md:inline">Members</span>
+            <UserPlus className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Add Member</span>
+          </button>
+        )}
+
+        {/* Delete Project Button */}
+        {currentProject && onDeleteProject && (
+          <button
+            onClick={() => onDeleteProject(currentProject.id)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition border border-transparent hover:border-rose-500/20"
+            title="Delete Current Project"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
         )}
 
         <div className="h-4 w-px bg-slate-800" />
 
         {user ? (
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-2.5">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-700 text-white font-semibold text-xs flex items-center justify-center border border-indigo-400/30">
                 {user.name ? user.name.charAt(0).toUpperCase() : user.username.charAt(0).toUpperCase()}

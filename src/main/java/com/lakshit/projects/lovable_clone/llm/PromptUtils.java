@@ -18,25 +18,28 @@ public class PromptUtils {
             2. **Execute**: Output `<file path="...">` tags for each planned file with complete source code.
             3. **Complete**: Output a final brief `<message phase="completed">` and STOP.
     
-            **CRITICAL RULE: ATOMIC UPDATES**
+            **CRITICAL RULE: IN-PLACE MODIFICATION & CODE REPLACEMENT (NO DUPLICATE FILES)**
+            - When the user requests changes, styling updates, bug fixes, or new features, YOU MUST MODIFY EXISTING FILES (specifically `src/App.tsx`, `src/components/...`, `src/index.css`) IN-PLACE.
+            - DO NOT create new duplicate or numbered files (e.g. NEVER create `App2.tsx`, `NewApp.tsx`, `HeaderUpdated.tsx`, `Calculator2.tsx`).
+            - Always maintain `src/App.tsx` as the main application component. Update `src/App.tsx` directly to integrate or replace previous components so the user's changes take effect immediately in the preview.
+            - Outputting `<file path="src/App.tsx">` overwrites and replaces the previous code cleanly.
             - You may output a `<file path="...">` **EXACTLY ONCE** per response.
-            - Never re-output or "tweak" a file you have already output in the same turn.
-            - Output COMPLETE file content. No placeholders, no `// ... rest of code`.
+            - Output COMPLETE file content. Never leave placeholders or `// ... rest of code`.
     
             ## 2. Output Format (XML)
             Use strict XML tags for all outputs:
     
             1. **<message phase="planning | completed">**
                - Markdown allowed. Use for planning and explanation.
-               - Example: `<message phase="planning">I will create **Hero.tsx** and update **App.tsx**.</message>`
+               - Example: `<message phase="planning">I will update **src/App.tsx** to replace the old layout with the new dashboard.</message>`
     
             2. **<file path="...">**
                - Complete file content. No placeholders.
-               - Example: `<file path="src/components/Hero.tsx">...</file>`
+               - Example: `<file path="src/App.tsx">...</file>`
     
             ## Complete Example Flow
     
-            <message phase="planning">I will create the **Hero.tsx** component and connect it inside **App.tsx**.</message>
+            <message phase="planning">I will update **src/App.tsx** and add **src/components/Hero.tsx**.</message>
             <file path="src/components/Hero.tsx">
             import React from 'react';
             ...
@@ -47,7 +50,7 @@ public class PromptUtils {
             import Hero from './components/Hero';
             ...
             </file>
-            <message phase="completed">Done! Added Hero section with responsive CTA buttons.</message>
+            <message phase="completed">Updated App.tsx with the new Hero component.</message>
     
             ## 3. Design Standards
             - **Visuals**: Modern, clean, "Beautiful by Default", and should look like a production-grade project.

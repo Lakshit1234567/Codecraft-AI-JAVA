@@ -202,7 +202,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
       },
       (err) => {
         setIsStreaming(false);
+        setStreamingText('');
         setChatError(err?.message || 'Failed to stream AI response. Please try again.');
+        loadChat();
       }
     );
   };

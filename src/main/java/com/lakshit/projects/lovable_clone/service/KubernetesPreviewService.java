@@ -9,4 +9,6 @@ public interface KubernetesPreviewService {
     K8sPreviewStatusResponse getPreviewPodStatus(Long projectId);
 
     void terminatePreviewPod(Long projectId);
+
+    String runCommand(String command, Long projectId, String containerName);
 }

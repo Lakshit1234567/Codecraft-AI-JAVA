@@ -155,6 +155,7 @@ export const streamChat = async (
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let receivedChunks = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -173,14 +174,19 @@ export const streamChat = async (
             try {
               const parsed = JSON.parse(jsonStr);
               if (parsed.text) {
+                receivedChunks++;
                 onChunk(parsed.text);
               }
             } catch (e) {
+              receivedChunks++;
               onChunk(jsonStr);
             }
           }
         }
       }
+    }
+    if (receivedChunks === 0) {
+      throw new Error('Connection closed without response from AI service. Please verify GROQ_API_KEY.');
     }
     onComplete();
   } catch (err) {

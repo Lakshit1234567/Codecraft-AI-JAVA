@@ -33,7 +33,7 @@ public class WebSecurityConfig {
                 .securityContext(context -> context.requireExplicitSave(false))
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
-                        .requestMatchers("/api/auth/login", "/api/auth/signup", "/api/plans", "/webhooks/**", "/error").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/signup", "/api/plans", "/webhooks/**", "/error", "/deploy/**", "/api/k8s-preview/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)

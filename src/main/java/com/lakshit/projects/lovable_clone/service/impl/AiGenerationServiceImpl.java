@@ -108,7 +108,30 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                     }
                     return Flux.<StreamResponse>empty();
                 }).subscribeOn(Schedulers.boundedElastic()))
-                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId, error));
+                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId, error))
+                .onErrorResume(error -> {
+                    String rawMsg = error.getMessage() != null ? error.getMessage() : "Unknown error";
+                    String userFriendlyReason;
+                    if (rawMsg.contains("401") || rawMsg.toLowerCase().contains("unauthorized")) {
+                        userFriendlyReason = "Unauthorized (401): Please verify that `GROQ_API_KEY` is set to a valid Groq API key in your environment or `application-local.yaml`.";
+                    } else if (rawMsg.contains("429") || rawMsg.toLowerCase().contains("too many requests")) {
+                        userFriendlyReason = "Rate limit reached (429): Groq API rate limit reached. Please wait a moment and try again.";
+                    } else {
+                        userFriendlyReason = "AI Generation error: " + rawMsg;
+                    }
+                    log.error("Handled streaming error for projectId {}: {}", projectId, userFriendlyReason);
+
+                    String formattedError = "<message phase=\"error\">\n" + userFriendlyReason + "\n</message>";
+                    fullResponseBuffer.append(formattedError);
+                    try {
+                        long duration = (System.currentTimeMillis() - startTime.get()) / 1000;
+                        if (duration < 0) duration = 0;
+                        finalizeChats(userMessage, chatSession, fullResponseBuffer.toString(), duration, null);
+                    } catch (Exception ex) {
+                        log.error("Failed to save error chat for projectId {}", projectId, ex);
+                    }
+                    return Flux.just(new StreamResponse(formattedError));
+                });
     }
 
     @Transactional

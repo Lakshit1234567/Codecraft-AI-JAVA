@@ -1,7 +1,20 @@
-import React, { useState } from 'react';
-import { X, Plus, FolderGit2, Check, ArrowRight, ShieldCheck, Globe, Zap, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import {
+  Plus,
+  FolderGit2,
+  Check,
+  ShieldCheck,
+  Globe,
+  Zap,
+  Trash2,
+  Search,
+  AlertCircle,
+} from 'lucide-react';
 import { ProjectSummary, ProjectType } from '../types';
-import { createProject, deleteProject } from '../api/client';
+import { createProject } from '../api/client';
+import { Modal } from './ui/Modal';
+import { EmptyState } from './ui/EmptyState';
+import { useToast } from './ui/ToastProvider';
 
 interface ProjectListModalProps {
   isOpen: boolean;
@@ -9,7 +22,7 @@ interface ProjectListModalProps {
   currentProjectId: number | null;
   onSelectProject: (project: ProjectSummary) => void;
   onProjectCreated: (project: ProjectSummary) => void;
-  onProjectDeleted?: (projectId: number) => void;
+  onRequestDeleteProject: (project: ProjectSummary) => void;
   onClose: () => void;
 }
 
@@ -19,30 +32,43 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
   currentProjectId,
   onSelectProject,
   onProjectCreated,
-  onProjectDeleted,
+  onRequestDeleteProject,
   onClose,
 }) => {
+  const { notify } = useToast();
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectType, setNewProjectType] = useState<ProjectType>('WEB_APP');
   const [loading, setLoading] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | ProjectType>('ALL');
 
-  if (!isOpen) return null;
+  const filteredProjects = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return projects.filter((proj) => {
+      const normalizedType: ProjectType = proj.type || 'WEB_APP';
+      if (typeFilter !== 'ALL' && normalizedType !== typeFilter) return false;
+      if (q && !proj.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [projects, searchQuery, typeFilter]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim()) return;
+    const trimmed = newProjectName.trim();
+    if (!trimmed) return;
 
     setLoading(true);
     setError(null);
     try {
-      const created = await createProject(newProjectName.trim(), newProjectType);
+      const created = await createProject(trimmed, newProjectType);
       onProjectCreated(created);
+      notify(`Created "${created.name}"`, 'success');
       setIsCreating(false);
       setNewProjectName('');
       setNewProjectType('WEB_APP');
+      onClose();
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to create project');
     } finally {
@@ -50,213 +76,290 @@ export const ProjectListModal: React.FC<ProjectListModalProps> = ({
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, projectId: number, projectName: string) => {
-    e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete "${projectName}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    setDeletingId(projectId);
-    try {
-      await deleteProject(projectId);
-      if (onProjectDeleted) {
-        onProjectDeleted(projectId);
-      }
-    } catch (err: any) {
-      alert(err.response?.data?.message || err.message || 'Failed to delete project');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-lg bg-[#101726] border border-slate-800 rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <FolderGit2 className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-base font-bold text-white">Your Projects</h2>
-          </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Projects"
+      description="Switch between active workspaces or initialize a new project."
+      icon={<FolderGit2 className="w-4 h-4 text-accent-fg" aria-hidden="true" />}
+      maxWidthClass="max-w-xl"
+    >
+      {/* Create Project Section */}
+      {!isCreating ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            type="button"
+            onClick={() => {
+              setNewProjectType('WEB_APP');
+              setIsCreating(true);
+              setError(null);
+            }}
+            className="p-3 rounded-lg border border-dashed border-line-strong hover:border-accent-fg bg-surface-base hover:bg-surface-subtle text-left flex items-center gap-3 transition"
           >
-            <X className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-md bg-accent-subtle text-accent-fg flex items-center justify-center shrink-0">
+              <Plus className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-ink-primary">New Web App</div>
+              <div className="text-[11px] text-ink-secondary">React + Live Preview</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setNewProjectType('DSA');
+              setIsCreating(true);
+              setError(null);
+            }}
+            className="p-3 rounded-lg border border-dashed border-line-strong hover:border-dsa-fg bg-surface-base hover:bg-surface-subtle text-left flex items-center gap-3 transition"
+          >
+            <div className="w-8 h-8 rounded-md bg-dsa-subtle text-dsa-fg flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-ink-primary">New DSA Fuzzer</div>
+              <div className="text-[11px] text-ink-secondary">Differential stress testing</div>
+            </div>
           </button>
         </div>
+      ) : (
+        <form
+          onSubmit={handleCreate}
+          className="p-4 rounded-lg bg-surface-base border border-line space-y-3.5"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-ink-primary">
+              Create {newProjectType === 'DSA' ? 'DSA Fuzzer' : 'Web App'} Project
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreating(false);
+                setError(null);
+              }}
+              className="text-xs text-ink-secondary hover:text-ink-primary transition"
+            >
+              Cancel
+            </button>
+          </div>
 
-        {/* Create Project Section */}
-        <div className="mt-4">
-          {!isCreating ? (
-            <div className="grid grid-cols-2 gap-2">
+          <fieldset>
+            <legend className="sr-only">Project type</legend>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Project type">
               <button
-                onClick={() => {
-                  setNewProjectType('WEB_APP');
-                  setIsCreating(true);
-                }}
-                className="py-2.5 px-3 rounded-xl border border-dashed border-indigo-500/40 hover:border-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/10 text-indigo-300 text-xs font-medium flex items-center justify-center gap-2 transition"
+                type="button"
+                role="radio"
+                aria-checked={newProjectType === 'WEB_APP'}
+                onClick={() => setNewProjectType('WEB_APP')}
+                className={`p-2.5 rounded-md border text-left flex items-start gap-2.5 transition ${
+                  newProjectType === 'WEB_APP'
+                    ? 'bg-accent-subtle border-accent text-ink-primary'
+                    : 'bg-surface-inset border-line text-ink-secondary hover:border-line-strong'
+                }`}
               >
-                <Plus className="w-4 h-4" />
-                <span>+ Web App</span>
+                <Globe className="w-4 h-4 text-accent-fg mt-0.5 shrink-0" aria-hidden="true" />
+                <div>
+                  <div className="text-xs font-medium">Web App</div>
+                  <div className="text-[11px] text-ink-muted">React + Preview</div>
+                </div>
               </button>
+
               <button
-                onClick={() => {
-                  setNewProjectType('DSA');
-                  setIsCreating(true);
-                }}
-                className="py-2.5 px-3 rounded-xl border border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 hover:bg-amber-500/10 text-amber-300 text-xs font-medium flex items-center justify-center gap-2 transition"
+                type="button"
+                role="radio"
+                aria-checked={newProjectType === 'DSA'}
+                onClick={() => setNewProjectType('DSA')}
+                className={`p-2.5 rounded-md border text-left flex items-start gap-2.5 transition ${
+                  newProjectType === 'DSA'
+                    ? 'bg-dsa-subtle border-dsa text-ink-primary'
+                    : 'bg-surface-inset border-line text-ink-secondary hover:border-line-strong'
+                }`}
               >
-                <Zap className="w-4 h-4 text-amber-400" />
-                <span>+ DSA Fuzzer</span>
+                <Zap className="w-4 h-4 text-dsa-fg mt-0.5 shrink-0" aria-hidden="true" />
+                <div>
+                  <div className="text-xs font-medium">DSA Fuzzer</div>
+                  <div className="text-[11px] text-ink-muted">Edge-case testing</div>
+                </div>
               </button>
             </div>
-          ) : (
-            <form onSubmit={handleCreate} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-200">
-                  Initialize New {newProjectType === 'DSA' ? 'DSA Fuzzing' : 'Web App'} Project
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsCreating(false)}
-                  className="text-xs text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
-              </div>
+          </fieldset>
 
-              {/* Project Type Selector */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewProjectType('WEB_APP')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2.5 transition ${
-                    newProjectType === 'WEB_APP'
-                      ? 'bg-indigo-600/15 border-indigo-500 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <Globe className="w-4 h-4 text-indigo-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h5 className="text-xs font-semibold">Web App</h5>
-                    <p className="text-[10px] text-slate-400">React + Live Preview</p>
-                  </div>
-                </button>
+          <div>
+            <label htmlFor="new-project-name" className="block text-xs font-medium text-ink-secondary mb-1.5">
+              Project Name
+            </label>
+            <input
+              id="new-project-name"
+              type="text"
+              data-autofocus
+              required
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder={
+                newProjectType === 'DSA'
+                  ? 'e.g. Trapping Rain Water'
+                  : 'e.g. Analytics Dashboard'
+              }
+              className="w-full px-3 py-2 rounded-md bg-surface-inset border border-line text-ink-primary placeholder-ink-muted text-xs focus:border-accent-fg focus:outline-none transition"
+            />
+          </div>
 
-                <button
-                  type="button"
-                  onClick={() => setNewProjectType('DSA')}
-                  className={`p-2.5 rounded-xl border text-left flex items-start gap-2.5 transition ${
-                    newProjectType === 'DSA'
-                      ? 'bg-amber-500/15 border-amber-500 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <Zap className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h5 className="text-xs font-semibold">DSA Fuzzer</h5>
-                    <p className="text-[10px] text-slate-400">Stress Test & Edge Cases</p>
-                  </div>
-                </button>
-              </div>
-
-              <input
-                type="text"
-                autoFocus
-                required
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder={newProjectType === 'DSA' ? 'e.g. Trapping Rain Water Solution' : 'e.g. Modern SaaS Landing Page'}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-indigo-500 transition"
-              />
-
-              {error && <p className="text-xs text-rose-400">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={loading || !newProjectName.trim()}
-                className="w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition shadow-lg shadow-indigo-600/20"
-              >
-                {loading ? 'Creating Project...' : 'Create & Launch Studio'}
-              </button>
-            </form>
+          {error && (
+            <div role="alert" className="flex items-center gap-2 text-xs text-rose-700 dark:text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>{error}</span>
+            </div>
           )}
-        </div>
 
-        {/* Project List */}
-        <div className="mt-4 flex-1 overflow-y-auto space-y-2 pr-1">
-          {projects.length === 0 ? (
-            <div className="text-center py-8 text-slate-500 text-xs">
-              No projects found. Create your first project above!
-            </div>
-          ) : (
-            projects.map((proj) => {
+          <button
+            type="submit"
+            disabled={loading || !newProjectName.trim()}
+            className="w-full py-2 px-3 rounded-md bg-accent hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-medium transition"
+          >
+            {loading ? 'Creating project...' : 'Create & Open Workspace'}
+          </button>
+        </form>
+      )}
+
+      {/* Search & Filter */}
+      {projects.length > 0 && (
+        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              className="w-3.5 h-3.5 text-ink-muted absolute left-2.5 top-1/2 -translate-y-1/2"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              aria-label="Filter projects"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search projects..."
+              className="w-full pl-8 pr-3 py-1.5 rounded-md bg-surface-inset border border-line text-xs text-ink-primary placeholder-ink-muted focus:border-accent-fg focus:outline-none transition"
+            />
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="Filter projects by type"
+            className="flex items-center bg-surface-inset border border-line p-0.5 rounded-md shrink-0"
+          >
+            {(['ALL', 'WEB_APP', 'DSA'] as const).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                role="tab"
+                aria-selected={typeFilter === filter}
+                onClick={() => setTypeFilter(filter)}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
+                  typeFilter === filter
+                    ? 'bg-surface-subtle text-ink-primary'
+                    : 'text-ink-muted hover:text-ink-secondary'
+                }`}
+              >
+                {filter === 'ALL' ? 'All' : filter === 'WEB_APP' ? 'Web' : 'DSA'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Project List */}
+      <div className="mt-3 space-y-1.5">
+        {projects.length === 0 ? (
+          <EmptyState
+            compact
+            icon={<FolderGit2 className="w-5 h-5" aria-hidden="true" />}
+            title="No projects yet"
+            description="Initialize a Web App or DSA Fuzzer project above to start building."
+          />
+        ) : filteredProjects.length === 0 ? (
+          <EmptyState
+            compact
+            icon={<Search className="w-5 h-5" aria-hidden="true" />}
+            title="No matching projects"
+            description="Try a different search term or reset the type filter."
+          />
+        ) : (
+          <ul role="list" className="space-y-1.5">
+            {filteredProjects.map((proj) => {
               const isSelected = proj.id === currentProjectId;
               const isDsa = proj.type === 'DSA';
 
               return (
-                <div
+                <li
                   key={proj.id}
-                  onClick={() => {
-                    onSelectProject(proj);
-                    onClose();
-                  }}
-                  className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between group ${
+                  className={`rounded-lg border transition flex items-center justify-between gap-2 pr-2 ${
                     isSelected
-                      ? 'bg-indigo-600/10 border-indigo-500/50 shadow-md'
-                      : 'bg-slate-900/60 border-slate-800 hover:bg-slate-900 hover:border-slate-700'
+                      ? 'bg-accent-subtle/60 border-accent/50'
+                      : 'bg-surface-base border-line-subtle hover:border-line'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      isSelected 
-                        ? 'bg-indigo-600 text-white' 
-                        : isDsa 
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                        : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {isDsa ? <Zap className="w-4 h-4" /> : <FolderGit2 className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold text-white flex items-center gap-2">
-                        {proj.name}
-                        {isSelected && <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-normal">Active</span>}
-                      </h4>
-                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400 font-mono">
-                        <span className="flex items-center gap-1 text-[10px]">
-                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                          {proj.role}
-                        </span>
-                        <span>•</span>
-                        <span className="text-[10px]">{isDsa ? 'DSA Fuzzer' : 'Web App'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => handleDelete(e, proj.id, proj.name)}
-                      disabled={deletingId === proj.id}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition opacity-80 group-hover:opacity-100"
-                      title="Delete Project"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectProject(proj);
+                      onClose();
+                    }}
+                    className="flex-1 min-w-0 p-2.5 text-left flex items-center gap-3 rounded-l-lg"
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${
+                        isSelected
+                          ? 'bg-accent text-white'
+                          : isDsa
+                          ? 'bg-dsa-subtle text-dsa-fg border border-dsa/30'
+                          : 'bg-surface-subtle text-ink-secondary border border-line'
+                      }`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <div className="text-slate-400">
-                      {isSelected ? (
-                        <Check className="w-4 h-4 text-indigo-400" />
+                      {isDsa ? (
+                        <Zap className="w-4 h-4" aria-hidden="true" />
                       ) : (
-                        <ArrowRight className="w-4 h-4 hover:translate-x-0.5 transition" />
+                        <FolderGit2 className="w-4 h-4" aria-hidden="true" />
                       )}
                     </div>
-                  </div>
-                </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-ink-primary truncate">
+                          {proj.name}
+                        </span>
+                        {isSelected && (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/20 text-accent-fg font-medium shrink-0">
+                            <Check className="w-2.5 h-2.5" aria-hidden="true" />
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-ink-muted font-mono">
+                        <span className="inline-flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                          {proj.role}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{isDsa ? 'DSA Fuzzer' : 'Web App'}</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {proj.role === 'OWNER' && (
+                    <button
+                      type="button"
+                      onClick={() => onRequestDeleteProject(proj)}
+                      aria-label={`Delete project ${proj.name}`}
+                      title="Delete project"
+                      className="p-1.5 rounded-md text-ink-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  )}
+                </li>
               );
-            })
-          )}
-        </div>
+            })}
+          </ul>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };

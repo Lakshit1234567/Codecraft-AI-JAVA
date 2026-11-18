@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, Code2, Eye, EyeOff } from 'lucide-react';
 import { login, signup } from '../api/client';
 import { User } from '../types';
+import { Modal } from './ui/Modal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -12,12 +13,11 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [isSignup, setIsSignup] = useState(false);
   const [name, setName] = useState('');
-  const [username, setUsername] = useState('testuser@example.com');
-  const [password, setPassword] = useState('password123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,119 +25,160 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     setLoading(true);
 
     try {
-      if (isSignup) {
-        const res = await signup(name || 'Developer', username, password);
-        onSuccess(res.user);
-      } else {
-        const res = await login(username, password);
-        onSuccess(res.user);
-      }
+      const res = isSignup
+        ? await signup(name.trim() || 'Developer', username.trim(), password)
+        : await login(username.trim(), password);
+      onSuccess(res.user);
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Authentication failed');
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          'Authentication failed. Please check your credentials.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const fillDemoAccount = () => {
+    setIsSignup(false);
+    setUsername('testuser@example.com');
+    setPassword('password123');
+    setError(null);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-      <div className="w-full max-w-md bg-[#101726] border border-slate-800 rounded-2xl shadow-2xl p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidthClass="max-w-md"
+      title={isSignup ? 'Create your Codecraft account' : 'Sign in to Codecraft'}
+      description={
+        isSignup
+          ? 'Build React applications and stress-test algorithms in one workspace.'
+          : 'Enter your credentials to open your projects and workspaces.'
+      }
+      icon={<Code2 className="w-4 h-4 text-accent-fg" aria-hidden="true" />}
+    >
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 p-3 rounded-md bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2"
         >
-          <X className="w-4 h-4" />
-        </button>
-
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-600/30">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-white">
-              {isSignup ? 'Create an Account' : 'Welcome Back'}
-            </h2>
-            <p className="text-xs text-slate-400">
-              {isSignup ? 'Start building AI-powered web apps' : 'Sign in to access your projects and studio'}
-            </p>
-          </div>
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
+      <form onSubmit={handleSubmit} className="space-y-3.5">
+        {isSignup && (
+          <div>
+            <label htmlFor="auth-name" className="block text-xs font-medium text-ink-secondary mb-1.5">
+              Full Name
+            </label>
+            <input
+              id="auth-name"
+              type="text"
+              required
+              autoComplete="name"
+              data-autofocus={isSignup ? '' : undefined}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Aarav Sharma"
+              className="w-full px-3 py-2 rounded-md bg-surface-inset border border-line text-ink-primary placeholder-ink-muted text-sm focus:border-accent-fg focus:outline-none transition"
+            />
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {isSignup && (
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Full Name</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="John Doe"
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
-              />
-            </div>
-          )}
+        <div>
+          <label htmlFor="auth-username" className="block text-xs font-medium text-ink-secondary mb-1.5">
+            Email or Username
+          </label>
+          <input
+            id="auth-username"
+            type="text"
+            required
+            autoComplete="username"
+            data-autofocus={!isSignup ? '' : undefined}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="you@company.com"
+            className="w-full px-3 py-2 rounded-md bg-surface-inset border border-line text-ink-primary placeholder-ink-muted text-sm focus:border-accent-fg focus:outline-none transition"
+          />
+        </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Email / Username</label>
+        <div>
+          <label htmlFor="auth-password" className="block text-xs font-medium text-ink-secondary mb-1.5">
+            Password
+          </label>
+          <div className="relative">
             <input
-              type="text"
+              id="auth-password"
+              type={showPassword ? 'text' : 'password'}
               required
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="user@example.com"
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Password</label>
-            <input
-              type="password"
-              required
+              autoComplete={isSignup ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500 transition"
+              placeholder="Enter your password"
+              className="w-full pl-3 pr-10 py-2 rounded-md bg-surface-inset border border-line text-ink-primary placeholder-ink-muted text-sm focus:border-accent-fg focus:outline-none transition"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-ink-muted hover:text-ink-primary transition"
+            >
+              {showPassword ? (
+                <EyeOff className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <Eye className="w-4 h-4" aria-hidden="true" />
+              )}
+            </button>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition"
-          >
-            {loading ? (
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <span>{isSignup ? 'Sign Up' : 'Log In'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-4 pt-4 border-t border-slate-800 text-center">
-          <button
-            onClick={() => {
-              setIsSignup(!isSignup);
-              setError(null);
-            }}
-            className="text-xs text-slate-400 hover:text-indigo-400 transition"
-          >
-            {isSignup ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
-          </button>
         </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full mt-2 py-2 px-4 rounded-md bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-medium text-sm flex items-center justify-center gap-2 transition"
+        >
+          {loading ? (
+            <span
+              className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
+              aria-hidden="true"
+            />
+          ) : (
+            <>
+              <span>{isSignup ? 'Create Account' : 'Sign In'}</span>
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </>
+          )}
+        </button>
+      </form>
+
+      <div className="mt-4 pt-3.5 border-t border-line-subtle flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+        <button
+          type="button"
+          onClick={() => {
+            setIsSignup((prev) => !prev);
+            setError(null);
+          }}
+          className="text-ink-secondary hover:text-accent-fg transition"
+        >
+          {isSignup ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
+        </button>
+
+        {!isSignup && (
+          <button
+            type="button"
+            onClick={fillDemoAccount}
+            className="text-ink-muted hover:text-ink-primary font-mono text-[11px] transition"
+          >
+            Use demo credentials
+          </button>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };

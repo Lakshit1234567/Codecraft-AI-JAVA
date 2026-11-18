@@ -3,37 +3,288 @@
 @tailwind utilities;
 
 :root {
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+
+  /* Light Theme — Warm Alabaster & Crisp Studio Surfaces */
+  --surface-canvas: #f5f6f9;
+  --surface-base: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-subtle: #eef0f5;
+  --surface-inset: #f8f9fc;
+
+  /* Hairline Borders */
+  --border-subtle: #e7eaf0;
+  --border-default: #d8dde6;
+  --border-strong: #c2c9d6;
+
+  /* High-Contrast Ink — WCAG 2.1 AA / AAA verified */
+  --text-primary: #111827;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  /* Brand & Mode Accents */
+  --accent-primary: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #1d4ed8;
+  --accent-subtle: #eff6ff;
+
+  --dsa-primary: #d97706;
+  --dsa-hover: #b45309;
+  --dsa-fg: #b45309;
+  --dsa-subtle: #fffbeb;
+
+  /* Whisper Elevation */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.03);
+  --shadow-popover: 0 10px 28px -6px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-modal: 0 24px 48px -12px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.06);
+
+  --scrollbar-thumb: rgba(15, 23, 42, 0.16);
+  --scrollbar-thumb-hover: rgba(15, 23, 42, 0.28);
+  --preview-dot: rgba(15, 23, 42, 0.11);
+}
+
+.dark {
   color-scheme: dark;
+
+  /* Dark Theme — Neutral Zinc IDE */
+  --surface-canvas: #09090b;
+  --surface-base: #0e0e11;
+  --surface-elevated: #141418;
+  --surface-subtle: #1c1c22;
+  --surface-inset: #060608;
+
+  --border-subtle: #1e1e26;
+  --border-default: #272732;
+  --border-strong: #3a3a49;
+
+  --text-primary: #f4f4f6;
+  --text-secondary: #a8a8b8;
+  --text-muted: #7c7c8e;
+
+  --accent-primary: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #60a5fa;
+  --accent-subtle: rgba(37, 99, 235, 0.14);
+
+  --dsa-primary: #d97706;
+  --dsa-hover: #b45309;
+  --dsa-fg: #fbbf24;
+  --dsa-subtle: rgba(245, 158, 11, 0.13);
+
+  --shadow-card: none;
+  --shadow-popover: 0 12px 28px -8px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 24px 48px -12px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --preview-dot: rgba(255, 255, 255, 0.08);
 }
 
-code, pre {
-  font-family: 'JetBrains Mono', monospace;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--surface-canvas);
+    color: var(--text-primary);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
 }
 
-/* Custom scrollbars */
+/* Adaptive scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
 }
 
-/* Shimmer animation */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+/* Modal & entrance animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-.animate-shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 140ms ease-out;
+}
+
+.animate-modal-in {
+  animation: modalScaleIn 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* PrismJS Syntax Theme — Crisp Light Mode (Default) */
+.code-prism {
+  color: #1e293b;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  tab-size: 2;
+}
+
+.code-prism .token.comment,
+.code-prism .token.prolog,
+.code-prism .token.doctype,
+.code-prism .token.cdata {
+  color: #64748b;
+  font-style: italic;
+}
+
+.code-prism .token.punctuation {
+  color: #64748b;
+}
+
+.code-prism .token.property,
+.code-prism .token.tag,
+.code-prism .token.boolean,
+.code-prism .token.number,
+.code-prism .token.constant,
+.code-prism .token.symbol {
+  color: #b45309;
+}
+
+.code-prism .token.selector,
+.code-prism .token.attr-name,
+.code-prism .token.string,
+.code-prism .token.char,
+.code-prism .token.builtin,
+.code-prism .token.template-string {
+  color: #047857;
+}
+
+.code-prism .token.operator,
+.code-prism .token.entity,
+.code-prism .token.url {
+  color: #0369a1;
+}
+
+.code-prism .token.atrule,
+.code-prism .token.attr-value,
+.code-prism .token.keyword {
+  color: #1d4ed8;
+  font-weight: 500;
+}
+
+.code-prism .token.function,
+.code-prism .token.class-name {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.code-prism .token.regex,
+.code-prism .token.important,
+.code-prism .token.variable {
+  color: #be123c;
+}
+
+/* PrismJS Syntax Theme — Dark Mode Override */
+.dark .code-prism {
+  color: #e4e4ec;
+}
+
+.dark .code-prism .token.comment,
+.dark .code-prism .token.prolog,
+.dark .code-prism .token.doctype,
+.dark .code-prism .token.cdata {
+  color: #6b7089;
+}
+
+.dark .code-prism .token.punctuation {
+  color: #8f94ab;
+}
+
+.dark .code-prism .token.property,
+.dark .code-prism .token.tag,
+.dark .code-prism .token.boolean,
+.dark .code-prism .token.number,
+.dark .code-prism .token.constant,
+.dark .code-prism .token.symbol {
+  color: #f59e0b;
+}
+
+.dark .code-prism .token.selector,
+.dark .code-prism .token.attr-name,
+.dark .code-prism .token.string,
+.dark .code-prism .token.char,
+.dark .code-prism .token.builtin,
+.dark .code-prism .token.template-string {
+  color: #34d399;
+}
+
+.dark .code-prism .token.operator,
+.dark .code-prism .token.entity,
+.dark .code-prism .token.url {
+  color: #93c5fd;
+}
+
+.dark .code-prism .token.atrule,
+.dark .code-prism .token.attr-value,
+.dark .code-prism .token.keyword {
+  color: #60a5fa;
+  font-weight: 400;
+}
+
+.dark .code-prism .token.function,
+.dark .code-prism .token.class-name {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.dark .code-prism .token.regex,
+.dark .code-prism .token.important,
+.dark .code-prism .token.variable {
+  color: #fb7185;
+}
+
+/* Subtle dot canvas for preview viewport */
+.preview-grid-bg {
+  background-image: radial-gradient(var(--preview-dot) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

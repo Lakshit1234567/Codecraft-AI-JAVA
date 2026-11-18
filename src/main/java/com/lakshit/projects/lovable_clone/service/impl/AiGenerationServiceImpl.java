@@ -19,13 +19,13 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -44,8 +44,6 @@ public class AiGenerationServiceImpl implements AiGenerationService {
     private final ChatEventRepository chatEventRepository;
     private final UsageService usageService;
 
-    private static final Pattern FILE_TAG_PATTERN = Pattern.compile("<file path=\"([^\"]+)\">(.*?)</file>", Pattern.DOTALL);
-
     @Override
     @PreAuthorize("@security.canEditProject(#projectId)")
     public Flux<StreamResponse> streamResponse(String userMessage, Long projectId) {
@@ -63,7 +61,6 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         StringBuilder fullResponseBuffer = new StringBuilder();
 
         AtomicReference<Long> startTime = new AtomicReference<>(System.currentTimeMillis());
-        AtomicReference<Long> endTime = new AtomicReference<>(0L);
         AtomicReference<Usage> usageRef = new AtomicReference<>();
 
         return chatClient.prompt()
@@ -87,9 +84,6 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                     String content = response.getResult().getOutput().getText();
 
                     if (content != null && !content.isEmpty()) {
-                        if (endTime.get() == 0) {
-                            endTime.set(System.currentTimeMillis());
-                        }
                         fullResponseBuffer.append(content);
                     }
 
@@ -97,28 +91,28 @@ public class AiGenerationServiceImpl implements AiGenerationService {
                         usageRef.set(response.getMetadata().getUsage());
                     }
                 })
-                .doOnComplete(() -> {
-                    Schedulers.boundedElastic().schedule(() -> {
-                        try {
-                            long duration = (endTime.get() - startTime.get()) / 1000;
-                            if (duration < 0) duration = 0;
-                            finalizeChats(userMessage, chatSession, fullResponseBuffer.toString(), duration, usageRef.get());
-                        } catch (Exception e) {
-                            log.error("Failed to finalize chats and save files for projectId: {}", projectId, e);
-                        }
-                    });
-                })
-                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId, error))
                 .map(response -> {
                     String text = "";
                     if (response != null && response.getResult() != null && response.getResult().getOutput() != null) {
                         text = response.getResult().getOutput().getText();
                     }
                     return new StreamResponse(text != null ? text : "");
-                });
+                })
+                .concatWith(Flux.<StreamResponse>defer(() -> {
+                    try {
+                        long duration = (System.currentTimeMillis() - startTime.get()) / 1000;
+                        if (duration < 0) duration = 0;
+                        finalizeChats(userMessage, chatSession, fullResponseBuffer.toString(), duration, usageRef.get());
+                    } catch (Exception e) {
+                        log.error("Failed to finalize chats and save files for projectId: {}", projectId, e);
+                    }
+                    return Flux.<StreamResponse>empty();
+                }).subscribeOn(Schedulers.boundedElastic()))
+                .doOnError(error -> log.error("Error during streaming for projectId: {}", projectId, error));
     }
 
-    private void finalizeChats(String userMessage, ChatSession chatSession, String fullText, Long duration, Usage usage) {
+    @Transactional
+    public void finalizeChats(String userMessage, ChatSession chatSession, String fullText, Long duration, Usage usage) {
         Long projectId = chatSession.getProject().getId();
         log.info("Finalizing chat for projectId={}, textLength={}", projectId, fullText != null ? fullText.length() : 0);
 
@@ -126,7 +120,7 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         int completionTokens = (usage != null && usage.getCompletionTokens() != null) ? usage.getCompletionTokens() : 0;
         int totalTokens = (usage != null && usage.getTotalTokens() != null) ? usage.getTotalTokens() : (promptTokens + completionTokens);
 
-        if(totalTokens > 0) {
+        if (totalTokens > 0) {
             usageService.recordTokenUsage(chatSession.getUser().getId(), totalTokens);
         }
 
@@ -151,14 +145,17 @@ public class AiGenerationServiceImpl implements AiGenerationService {
 
         List<ChatEvent> chatEventList = llmResponseParser.parseChatEvents(fullText, assistantChatMessage);
         chatEventList.addFirst(ChatEvent.builder()
-                        .type(ChatEventType.THOUGHT)
-                        .chatMessage(assistantChatMessage)
-                        .content("Thought for "+duration+"s")
-                        .sequenceOrder(0)
+                .type(ChatEventType.THOUGHT)
+                .chatMessage(assistantChatMessage)
+                .content("Thought for " + duration + "s")
+                .sequenceOrder(0)
                 .build());
 
         for (ChatEvent event : chatEventList) {
             if (event.getType() == ChatEventType.FILE_EDIT && event.getFilePath() != null && event.getContent() != null) {
+                if (event.getContent().trim().isEmpty()) {
+                    continue; // Skip empty files so we don't accidentally wipe existing code
+                }
                 log.info("Saving generated file: projectId={}, path={}", projectId, event.getFilePath());
                 try {
                     projectFileService.saveFile(projectId, event.getFilePath(), event.getContent());
@@ -169,6 +166,7 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         }
 
         chatEventRepository.saveAll(chatEventList);
+        assistantChatMessage.setEvents(chatEventList);
         log.info("Chat finalized successfully for projectId={}, saved {} events", projectId, chatEventList.size());
     }
 
@@ -176,7 +174,7 @@ public class AiGenerationServiceImpl implements AiGenerationService {
         ChatSessionId chatSessionId = new ChatSessionId(projectId, userId);
         ChatSession chatSession = chatSessionRepository.findById(chatSessionId).orElse(null);
 
-        if(chatSession == null) {
+        if (chatSession == null) {
             Project project = projectRepository.findById(projectId)
                     .orElseThrow(() -> new ResourceNotFoundException("Project", projectId.toString()));
             User user = userRepository.findById(userId)

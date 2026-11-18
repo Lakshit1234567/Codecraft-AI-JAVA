@@ -6,10 +6,7 @@ import com.lakshit.projects.lovable_clone.enums.ChatEventType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,13 +29,13 @@ public class LlmResponseParser {
 
     // Attribute pattern supporting double, single, or unquoted attributes
     private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile(
-            "(path|args)=[\"']?([^\"' >]+)[\"']?",
+            "(path|name|file|args|phase)=[\"']?([^\"' >]+)[\"']?",
             Pattern.CASE_INSENSITIVE
     );
 
-    // Unclosed <file path="..."> tag (e.g. If stream terminates before closing tag)
+    // Unclosed <file path="..."> tag (e.g. if stream terminates or model omitted closing tag)
     private static final Pattern UNCLOSED_FILE_PATTERN = Pattern.compile(
-            "<file([^>]*)>([\\s\\S]+)$",
+            "<file([^>]*)>([\\s\\S]*?)(?=(?:<message|<file|$))",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -56,6 +53,7 @@ public class LlmResponseParser {
             return events;
         }
 
+        Set<String> processedFiles = new HashSet<>();
         Matcher matcher = GENERIC_TAG_PATTERN.matcher(fullResponse);
         boolean hasFiles = false;
 
@@ -64,27 +62,33 @@ public class LlmResponseParser {
             String attributes = matcher.group(3);
             String content = matcher.group(4).trim();
 
-            // Extract attributes map
             Map<String, String> attrMap = extractAttributes(attributes);
 
             ChatEvent.ChatEventBuilder builder = ChatEvent.builder()
                     .chatMessage(parentMessage)
-                    .content(content) // This is your Markdown content
+                    .content(content)
                     .sequenceOrder(orderCounter++);
 
             switch (tagName) {
-                case "message" -> builder.type(ChatEventType.MESSAGE);
+                case "message" -> {
+                    builder.type(ChatEventType.MESSAGE);
+                    String phase = attrMap.get("phase");
+                    if (phase != null) {
+                        builder.metadata(phase);
+                    }
+                }
                 case "file" -> {
                     builder.type(ChatEventType.FILE_EDIT);
-                    String filePath = attrMap.get("path");
+                    String filePath = getFilePath(attrMap);
                     builder.filePath(filePath);
-                    if (filePath != null && !filePath.isEmpty()) {
+                    if (filePath != null && !filePath.isEmpty() && !content.isEmpty()) {
                         hasFiles = true;
+                        processedFiles.add(cleanPath(filePath));
                     }
                 }
                 case "tool" -> {
                     builder.type(ChatEventType.TOOL_LOG);
-                    builder.metadata(attrMap.get("args")); // Store raw file list in metadata
+                    builder.metadata(attrMap.get("args"));
                 }
                 default -> { continue; }
             }
@@ -92,15 +96,15 @@ public class LlmResponseParser {
             events.add(builder.build());
         }
 
-        // If no files were found via closed XML tags, check for unclosed <file ...>
+        // Check for unclosed <file ...> tags if none found or in addition
         if (!hasFiles) {
             Matcher unclosedMatcher = UNCLOSED_FILE_PATTERN.matcher(fullResponse);
-            if (unclosedMatcher.find()) {
+            while (unclosedMatcher.find()) {
                 String attributes = unclosedMatcher.group(1);
                 String content = unclosedMatcher.group(2).trim();
                 Map<String, String> attrMap = extractAttributes(attributes);
-                String filePath = attrMap.get("path");
-                if (filePath != null && !filePath.isEmpty()) {
+                String filePath = getFilePath(attrMap);
+                if (filePath != null && !filePath.isEmpty() && !content.isEmpty() && !processedFiles.contains(cleanPath(filePath))) {
                     events.add(ChatEvent.builder()
                             .chatMessage(parentMessage)
                             .type(ChatEventType.FILE_EDIT)
@@ -109,11 +113,12 @@ public class LlmResponseParser {
                             .sequenceOrder(orderCounter++)
                             .build());
                     hasFiles = true;
+                    processedFiles.add(cleanPath(filePath));
                 }
             }
         }
 
-        // Fallback: Check for markdown code blocks with file path comments
+        // Fallback: Check for markdown code blocks with file path comments or content
         if (!hasFiles) {
             Matcher codeMatcher = CODE_BLOCK_PATTERN.matcher(fullResponse);
             while (codeMatcher.find()) {
@@ -122,7 +127,15 @@ public class LlmResponseParser {
                 String codeContent = codeMatcher.group(3);
 
                 String resolvedPath = pathAttr != null ? pathAttr.trim() : (commentPath != null ? commentPath.trim() : null);
-                if (resolvedPath != null && !resolvedPath.isEmpty() && codeContent != null && !codeContent.trim().isEmpty()) {
+
+                // If no path was explicitly annotated, detect if it's the main React component
+                if (resolvedPath == null && codeContent != null && !codeContent.trim().isEmpty()) {
+                    if (codeContent.contains("export function App") || codeContent.contains("function App") || codeContent.contains("export default App")) {
+                        resolvedPath = "src/App.tsx";
+                    }
+                }
+
+                if (resolvedPath != null && !resolvedPath.isEmpty() && codeContent != null && !codeContent.trim().isEmpty() && !processedFiles.contains(cleanPath(resolvedPath))) {
                     events.add(ChatEvent.builder()
                             .chatMessage(parentMessage)
                             .type(ChatEventType.FILE_EDIT)
@@ -131,6 +144,7 @@ public class LlmResponseParser {
                             .sequenceOrder(orderCounter++)
                             .build());
                     hasFiles = true;
+                    processedFiles.add(cleanPath(resolvedPath));
                 }
             }
         }
@@ -148,6 +162,18 @@ public class LlmResponseParser {
         return events;
     }
 
+    private String getFilePath(Map<String, String> attrMap) {
+        if (attrMap.containsKey("path")) return attrMap.get("path");
+        if (attrMap.containsKey("name")) return attrMap.get("name");
+        if (attrMap.containsKey("file")) return attrMap.get("file");
+        return null;
+    }
+
+    private String cleanPath(String path) {
+        if (path == null) return "";
+        return path.startsWith("/") ? path.substring(1) : path;
+    }
+
     private Map<String, String> extractAttributes(String attributeString) {
         Map<String, String> attributes = new HashMap<>();
         if (attributeString == null) return attributes;
@@ -158,5 +184,4 @@ public class LlmResponseParser {
         }
         return attributes;
     }
-
 }

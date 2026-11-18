@@ -21,9 +21,10 @@ interface LivePreviewProps {
   projectId: number;
   files: FileNode[];
   activeFile?: string | null;
+  previewVersion?: number;
 }
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files, previewVersion = 0 }) => {
   const [previewMode, setPreviewMode] = useState<'sandbox' | 'k8s'>('sandbox');
   const [device, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [loading, setLoading] = useState(true);
@@ -44,7 +45,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
     } else {
       checkK8sStatus();
     }
-  }, [projectId, files.length, refreshKey, previewMode, k8sRefreshKey]);
+  }, [projectId, files.length, previewVersion, refreshKey, previewMode, k8sRefreshKey]);
 
   // Listen to postMessage from iframe for errors & console logs
   useEffect(() => {
@@ -144,7 +145,47 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    window.__ENV__ = { VITE_API_URL: 'http://localhost:8080' };
+    window.ENV = window.__ENV__;
+
+    // Client-side API Mock Fallback: enables preview interactivity even if backend service is not running
+    (function() {
+      const _nativeFetch = window.fetch;
+      window.fetch = async function(url, options) {
+        const urlStr = String(url);
+        try {
+          const res = await _nativeFetch(url, options);
+          if (res.ok) return res;
+        } catch(e) {}
+
+        if (urlStr.includes('/calculate')) {
+          try {
+            const u = new URL(urlStr, window.location.href);
+            const expr = u.searchParams.get('expr');
+            if (expr) {
+              const cleanExpr = expr.replace(/[^0-9+\-*\/.]/g, '');
+              const result = Function('"use strict"; return (' + cleanExpr + ')')();
+              return new Response(JSON.stringify({ result: result }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+          } catch(err) {
+            return new Response(JSON.stringify({ error: 'Evaluation error' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+        }
+        return new Response(JSON.stringify({ status: 'ok', mock: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      };
+    })();
+  </script>
+  <script crossorigin="anonymous" src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -166,6 +207,16 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    if (window.Babel) {
+      window.Babel.registerPreset('tsx', {
+        presets: [
+          [window.Babel.availablePresets['typescript'], { ignoreExtensions: true }],
+          [window.Babel.availablePresets['react'], { runtime: 'classic' }]
+        ]
+      });
+    }
+  </script>
   
   <style>
     body {
@@ -193,13 +244,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
       _error.apply(console, args);
       window.parent.postMessage({ type: 'PREVIEW_CONSOLE', level: 'error', message: args.join(' ') }, '*');
     };
-    window.onerror = function(msg, url, line) {
-      window.parent.postMessage({ type: 'PREVIEW_ERROR', message: msg + ' (Line ' + line + ')' }, '*');
+    window.onerror = function(msg, url, line, col, error) {
+      const errStr = String(msg || '');
+      if (errStr.includes('Script error')) {
+        if (error && error.message) {
+          window.parent.postMessage({ type: 'PREVIEW_ERROR', message: error.message + ' (Line ' + line + ')' }, '*');
+        }
+        return;
+      }
+      window.parent.postMessage({ type: 'PREVIEW_ERROR', message: errStr + ' (Line ' + line + ')' }, '*');
     };
   </script>
 
   <!-- Lucide SVG Icons Shim -->
-  <script type="text/babel">
+  <script>
     const { createElement: h } = React;
     function createLucideIcon(paths) {
       return function({ size = 20, className = '', color = 'currentColor', strokeWidth = 2, ...props }) {
@@ -236,7 +294,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
       Globe: createLucideIcon(['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z', 'M2 12h20']),
       Search: createLucideIcon(['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'm21 21-4.3-4.3']),
       Menu: createLucideIcon(['M4 12h16', 'M4 6h16', 'M4 18h16']),
-      X: createLucideIcon(['M18 6 6 18', 'M6 6l12 12'])
+      X: createLucideIcon(['M18 6 6 18', 'M6 6l12 12']),\n      Circle: createLucideIcon(['M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z']),\n      Square: createLucideIcon(['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z']),\n      Calculator: createLucideIcon(['M4 2v20h16V2H4zm4 4h8v4H8V6zm0 6h2v2H8v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-8 4h2v2H8v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2z'])
     };
 
     window.LucideProxy = new Proxy(window.LucideIcons, {
@@ -250,7 +308,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
   </script>
 
   <!-- Subcomponents & Main App Transpilation -->
-  <script type="text/babel" data-presets="react,typescript">
+  <script type="text/babel" data-presets="tsx">
     const { useState, useEffect, useMemo, useCallback, useRef } = React;
     const Lucide = window.LucideProxy;
     const { 
@@ -295,15 +353,40 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
   };
 
   const sanitizeComponentCode = (code: string, componentName: string) => {
-    let clean = code.replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"];?/g, '');
-    clean = clean.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, '');
+    let clean = code;
+    clean = clean.replace(/import\.meta\.env/g, '(window.__ENV__ || window.ENV || {})');
+    clean = clean.replace(/import\.meta/g, '({})');
+    clean = clean.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"][^'"]+['"];?/g, (_match, group) => {
+      const names = group.split(',').map((s: string) => s.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+      return names.map((n: string) => {
+        const reactHooks = ['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef', 'useContext', 'createContext', 'useReducer'];
+        if (reactHooks.includes(n)) return `var ${n} = React.${n};`;
+        return `var ${n} = (window.LucideProxy && window.LucideProxy['${n}']) || (Components && (Components['${n}'] || Components['${n}Component'])) || (() => null);`;
+      }).join('\n');
+    });
+    clean = clean.replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"];?/g, '');
+    clean = clean.replace(/export\s+default\s+function(?:\s+([A-Za-z0-9_]+))?\s*\(/g, (_m, p1) => `function ${p1 || componentName}(`);
+    clean = clean.replace(/export\s+default\s+([A-Za-z0-9_]+);?/g, (_m, id) => {
+      return `if (typeof ${id} !== 'undefined') { Components['${id}'] = ${id}; Components['${componentName}'] = ${id}; Components['${id}Component'] = ${id}; Components['${componentName}Component'] = ${id}; }`;
+    });
     clean = clean.replace(/export\s+(function|const|let|var)\s+/g, '$1 ');
     return clean;
   };
 
   const sanitizeAppCode = (code: string) => {
-    let clean = code.replace(/import\s+(\w+)\s+from\s+['"][^'"]+['"];?/g, (match, p1) => {
-      return `const ${p1} = Components['${p1}'] || window.LucideProxy['${p1}'] || (() => null);`;
+    let clean = code;
+    clean = clean.replace(/import\.meta\.env/g, '(window.__ENV__ || window.ENV || {})');
+    clean = clean.replace(/import\.meta/g, '({})');
+    clean = clean.replace(/import\s*\{\s*([^}]+)\s*\}\s*from\s*['"][^'"]+['"];?/g, (_match, group) => {
+      const names = group.split(',').map((s: string) => s.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+      return names.map((n: string) => {
+        const reactHooks = ['useState', 'useEffect', 'useMemo', 'useCallback', 'useRef', 'useContext', 'createContext', 'useReducer'];
+        if (reactHooks.includes(n)) return `var ${n} = React.${n};`;
+        return `var ${n} = (Components && (Components['${n}'] || Components['${n.replace(/Component$/, "")}'] || Components['${n}Component'])) || (window.LucideProxy && window.LucideProxy['${n}']) || (() => null);`;
+      }).join('\n');
+    });
+    clean = clean.replace(/import\s+(\w+)\s+from\s*['"][^'"]+['"];?/g, (_match, p1) => {
+      return `var ${p1} = (Components && (Components['${p1}'] || Components['${p1.replace(/Component$/, "")}'] || Components['${p1}Component'])) || (window.LucideProxy && window.LucideProxy['${p1}']) || (() => null);`;
     });
     clean = clean.replace(/import\s+[\s\S]*?from\s+['"][^'"]+['"];?/g, '');
     clean = clean.replace(/export\s+default\s+App;?/g, '');
@@ -497,7 +580,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ projectId, files }) =>
               {isK8sRunning ? (
                 <iframe
                   key={k8sRefreshKey}
-                  src={k8sStatus?.previewUrl}
+                  src={k8sStatus?.previewUrl ? `${k8sStatus.previewUrl}?v=${k8sRefreshKey}` : undefined}
                   title="Kubernetes Pod Preview"
                   className="w-full h-full bg-slate-950 border-0"
                 />

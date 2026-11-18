@@ -22,21 +22,33 @@ public class CodeGenerationTools {
             @ToolParam(description = "List of relative paths (e.g., ['src/App.tsx'])")
             List<String> paths
     ) {
-
         List<String> result = new ArrayList<>();
 
-        for(String path: paths) {
+        if (paths == null || paths.isEmpty()) {
+            return result;
+        }
+
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+
             String cleanPath = path.startsWith("/") ? path.substring(1) : path;
+            log.info("Requested file for reading: {}", cleanPath);
 
-            log.info("Requested file: {}", cleanPath);
-
-            String content = projectFileService.getFileContent(projectId, cleanPath).content();
-
-            result.add(String.format(
-                    "--- START OF FILE: %s ---\n%s\n--- END OF FILE ---",
-                    cleanPath, content
-            ));
-
+            try {
+                String content = projectFileService.getFileContent(projectId, cleanPath).content();
+                result.add(String.format(
+                        "--- START OF FILE: %s ---\n%s\n--- END OF FILE ---",
+                        cleanPath, content != null ? content : ""
+                ));
+            } catch (Exception e) {
+                log.warn("Could not read file '{}' for projectId #{}: {}", cleanPath, projectId, e.getMessage());
+                result.add(String.format(
+                        "--- FILE NOT FOUND: %s ---",
+                        cleanPath
+                ));
+            }
         }
 
         return result;

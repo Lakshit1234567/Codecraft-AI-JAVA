@@ -6,9 +6,6 @@ spring:
     name: lovable-clone
     description: this is application
 
-  config:
-    import: "optional:application-local.yaml"
-
   datasource:
     url: jdbc:postgresql://localhost:9010/pgvector-test
     username: user
@@ -32,6 +29,10 @@ spring:
         options:
           model: openai/gpt-oss-120b
           temperature: 0.1
+
+  # Loaded last so gitignored application-local.yaml can override secrets.
+  config:
+    import: "optional:classpath:application-local.yaml"
 
 jwt:
   secret-key: ${JWT_SECRET_KEY:as9b7aodlbjfkluosfd789ujeklfnlsduf90b8ha908w74tuqijvlckajdl}

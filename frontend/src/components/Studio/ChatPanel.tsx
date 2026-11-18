@@ -9,7 +9,8 @@ import {
   CheckCircle2, 
   Wand2,
   Terminal,
-  ArrowUpRight
+  ArrowUpRight,
+  ExternalLink
 } from 'lucide-react';
 import { ChatMessage, ChatEvent } from '../../types';
 import { ThoughtAccordion } from './ThoughtAccordion';
@@ -23,10 +24,10 @@ interface ChatPanelProps {
 }
 
 const QUICK_PROMPTS = [
-  'Create a responsive Navbar component in src/Navbar.tsx',
-  'Add a modern Hero section with CTA in src/Hero.tsx',
-  'Add a Feature Grid component with icons in src/Features.tsx',
-  'Create a Contact Form with validation in src/Contact.tsx',
+  'Create a modern responsive calculator in src/components/Calculator.tsx and connect it in App.tsx',
+  'Add a modern Hero section with CTA in src/components/Hero.tsx',
+  'Build a Todo list app with filter and local storage in App.tsx',
+  'Add a Feature Grid component with icons in src/components/Features.tsx',
 ];
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -130,51 +131,58 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               }`}
             >
               {/* User Plain Content */}
-              {msg.role === 'USER' && <div>{msg.content}</div>}
+              {msg.role === 'USER' && <div className="whitespace-pre-wrap">{msg.content}</div>}
 
               {/* Assistant Events */}
               {msg.role === 'ASSISTANT' && (
                 <div className="space-y-2">
-                  {msg.events?.map((ev, evIdx) => {
-                    if (ev.type === 'THOUGHT') {
-                      return <ThoughtAccordion key={evIdx} content={ev.content || 'Thought process'} />;
-                    }
+                  {msg.events && msg.events.length > 0 ? (
+                    msg.events.map((ev, evIdx) => {
+                      if (ev.type === 'THOUGHT') {
+                        return <ThoughtAccordion key={evIdx} content={ev.content || 'Thought process'} />;
+                      }
 
-                    if (ev.type === 'FILE_EDIT' && ev.filePath) {
-                      return (
-                        <div
-                          key={evIdx}
-                          onClick={() => onSelectFile(ev.filePath!)}
-                          className="p-2 rounded-lg bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between hover:bg-indigo-950/60 cursor-pointer transition group"
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileCode className="w-4 h-4 text-indigo-400" />
-                            <span className="font-mono text-[11px] text-indigo-200 font-medium">
-                              {ev.filePath}
+                      if (ev.type === 'FILE_EDIT' && ev.filePath) {
+                        return (
+                          <div
+                            key={evIdx}
+                            onClick={() => onSelectFile(ev.filePath!)}
+                            className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between hover:bg-indigo-950/60 cursor-pointer transition group shadow-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <FileCode className="w-4 h-4 text-indigo-400" />
+                              <span className="font-mono text-[11px] text-indigo-200 font-medium">
+                                {ev.filePath}
+                              </span>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 group-hover:bg-indigo-500/30 font-medium transition flex items-center gap-1">
+                              <span>Open in Editor</span>
+                              <ExternalLink className="w-3 h-3" />
                             </span>
                           </div>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 group-hover:bg-indigo-500/30 transition">
-                            View File
-                          </span>
-                        </div>
-                      );
-                    }
+                        );
+                      }
 
-                    if (ev.type === 'MESSAGE') {
-                      return (
-                        <div key={evIdx} className="text-slate-200 leading-normal">
-                          {ev.metadata && (
-                            <span className="inline-block text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-semibold mr-1.5">
-                              {ev.metadata}
-                            </span>
-                          )}
-                          {ev.content}
-                        </div>
-                      );
-                    }
+                      if (ev.type === 'MESSAGE') {
+                        return (
+                          <div key={evIdx} className="text-slate-200 leading-normal">
+                            {ev.metadata && (
+                              <span className="inline-block text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-semibold mr-1.5">
+                                {ev.metadata}
+                              </span>
+                            )}
+                            {ev.content}
+                          </div>
+                        );
+                      }
 
-                    return null;
-                  })}
+                      return null;
+                    })
+                  ) : (
+                    <div className="text-slate-200 leading-normal whitespace-pre-wrap">
+                      {msg.content || 'Response generated.'}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

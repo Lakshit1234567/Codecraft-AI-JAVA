@@ -26,6 +26,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
   const [streamingText, setStreamingText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'code' | 'adversary'>('code');
+  const [previewVersion, setPreviewVersion] = useState(0);
 
   // Adversary state
   const [adversaryRunning, setAdversaryRunning] = useState(false);
@@ -54,9 +55,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
       const target = preferredFile || activeFile;
       if (treeFiles.length > 0) {
         if (target && treeFiles.some((f) => f.path === target)) {
-          handleSelectFile(target);
+          handleSelectFile(target, false);
         } else {
-          handleSelectFile(treeFiles[0].path);
+          handleSelectFile(treeFiles[0].path, false);
         }
       }
     } catch (err) {
@@ -64,9 +65,11 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
     }
   };
 
-  const handleSelectFile = async (path: string) => {
+  const handleSelectFile = async (path: string, shouldSwitchTab: boolean = false) => {
     setActiveFile(path);
-    setActiveTab('code');
+    if (shouldSwitchTab) {
+      setActiveTab('code');
+    }
     setLoadingFile(true);
     try {
       const res = await fetchFileContent(project.id, path);
@@ -89,28 +92,34 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
     setIsStreaming(true);
     setStreamingText('');
 
+    let accumulated = '';
+
     await streamChat(
       project.id,
       text,
       (chunk) => {
+        accumulated += chunk;
         setStreamingText((prev) => prev + chunk);
       },
       () => {
         setIsStreaming(false);
         setStreamingText('');
-        // Immediately reload chats & files
-        loadChat();
-        loadFiles();
 
-        // Background polls to capture async finalizeChats write
+        // Detect any generated file from the stream
+        const fileMatch = accumulated.match(/<file[^>]*path=["']?([^"'>\s]+)["']?[^>]*>/i);
+        const generatedFile = fileMatch ? fileMatch[1] : undefined;
+
+        // Reload chats & files immediately with the generated file selected
+        loadChat();
+        loadFiles(generatedFile);
+        setPreviewVersion((v) => v + 1);
+
+        // Additional poll to capture any delayed writes
         setTimeout(() => {
           loadChat();
-          loadFiles();
-        }, 1200);
-
-        setTimeout(() => {
-          loadFiles();
-        }, 2800);
+          loadFiles(generatedFile);
+          setPreviewVersion((v) => v + 1);
+        }, 1500);
       },
       (error) => {
         console.error('Streaming error:', error);
@@ -132,6 +141,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
         () => {
           setAdversaryRunning(false);
           loadFiles();
+          setPreviewVersion((v) => v + 1);
         },
         (err) => {
           console.error('Adversary error:', err);
@@ -154,7 +164,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
           streamingText={streamingText}
           isStreaming={isStreaming}
           onSendMessage={handleSendMessage}
-          onSelectFile={handleSelectFile}
+          onSelectFile={(filePath) => handleSelectFile(filePath, true)}
         />
       </div>
 
@@ -212,7 +222,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
               <FileExplorer
                 files={files}
                 activeFile={activeFile}
-                onSelectFile={handleSelectFile}
+                onSelectFile={(filePath) => handleSelectFile(filePath, true)}
               />
               <CodeViewer
                 filePath={activeFile}
@@ -221,7 +231,12 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({ project }) => 
               />
             </div>
           ) : activeTab === 'preview' ? (
-            <LivePreview projectId={project.id} files={files} activeFile={activeFile} />
+            <LivePreview 
+              projectId={project.id} 
+              files={files} 
+              activeFile={activeFile} 
+              previewVersion={previewVersion} 
+            />
           ) : (
             <div className="flex-1 p-6 overflow-y-auto bg-[#0a0f1d] flex flex-col items-center justify-center text-center">
               <div className="max-w-2xl w-full space-y-4">
